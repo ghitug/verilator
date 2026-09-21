@@ -80,6 +80,7 @@ class EmitCModel final : public EmitCFunc {
         // Declare foreign instances up front to make C++ happy
         puts("\n");
         puts("class " + EmitCUtil::symClassName() + ";\n");
+        puts("class " + EmitCUtil::symsStateClassName() + ";\n");
         puts("class " + EmitCUtil::prefixNameProtect(modp) + ";\n");  // For rootp pointer only
         for (const string& base : v3Global.opt.traceClassLangs()) puts("class " + base + ";\n");
         emitModCUse(modp, VUseType::INT_FWD_CLASS);  // Note: This is needed for cell forwarding
@@ -96,6 +97,7 @@ class EmitCModel final : public EmitCFunc {
         puts("public VerilatedModel {\n");
         // The symbol table references the model's evaluation state
         puts("friend class " + EmitCUtil::symClassName() + ";\n");
+        puts("friend class " + EmitCUtil::symsStateClassName() + ";\n");
 
         ofp()->resetPrivate();
         ofp()->putsPrivate(true);  // private:
@@ -603,7 +605,7 @@ class EmitCModel final : public EmitCFunc {
                         + v3Global.opt.traceClassBase() + "* tracep, uint32_t code) {\n");
         putsDecoration(modp, "// Callback from tracep->open()\n");
         puts(EmitCUtil::voidSelfAssign(modp));
-        puts(EmitCUtil::symClassAssign());
+        puts(EmitCUtil::symFullClassAssign());
         puts("if (!vlSymsp->_vm_contextp__->calcUnusedSigs()) {\n");
         puts("VL_FATAL_MT(__FILE__, __LINE__, __FILE__,\n");  // LCOV_EXCL_LINE
         puts("\"Turning on wave traces requires Verilated::traceEverOn(true) call before time "
@@ -695,6 +697,7 @@ class EmitCModel final : public EmitCFunc {
                                 "Model implementation (design independent parts)");
         puts("\n");
         puts("#include \"" + EmitCUtil::pchClassName() + ".h\"\n");
+        puts("#include \"" + EmitCUtil::symClassName() + ".h\"\n");
         for (const string& base : v3Global.opt.traceSourceLangs())
             puts("#include \"" + base + ".h\"\n");
 

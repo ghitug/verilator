@@ -134,6 +134,7 @@ class EmitCSyms final : EmitCBaseVisitorConst {
     std::vector<std::string> m_ifaceRefTableRows;
 
     // METHODS
+    void emitSymsStateHdr();
     void emitSymHdr();
     void emitSymImpPreamble();
     void emitVarTables();
@@ -801,6 +802,7 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         if (!m_dpiHdrOnly) {
             // Must emit implementation first to determine number of splits
             emitSymImp(nodep);
+            emitSymsStateHdr();
             emitSymHdr();
         }
         if (v3Global.dpi()) {
@@ -918,9 +920,14 @@ public:
     }
 };
 
-void EmitCSyms::emitSymHdr() {
+void EmitCSyms::emitSymsStateHdr() {
     UINFO(6, __FUNCTION__ << ": ");
-    openNewOutputHeaderFile(symClassName(), "Symbol table internal header");
+    // The design-independent part of the symbol table. Contains all model state other than
+    // the module instances, so that translation units which do not reference another scope
+    // can be compiled without seeing every module's header. Access to members declared here
+    // is at a fixed offset whether through this class or the derived one, so splitting the
+    // symbol table this way costs nothing at run-time.
+    openNewOutputHeaderFile(EmitCUtil::symsStateClassName(), "Symbol table state internal header");
     puts("//\n");
     puts("// Internal details; most calling programs do not need this header,\n");
     puts("// unless using verilator public meta comments.\n");
@@ -936,37 +943,15 @@ void EmitCSyms::emitSymHdr() {
     }
     if (v3Global.opt.usesProfiler()) puts("#include \"verilated_profiler.h\"\n");
 
-    puts("\n// INCLUDE MODEL CLASS\n");
-    puts("\n#include \"" + topClassName() + ".h\"\n");
+    puts("\nclass " + topClassName() + ";\n");
 
-    puts("\n// INCLUDE MODULE CLASSES\n");
-    for (AstNodeModule *nodep = v3Global.rootp()->modulesp(), *nextp; nodep; nodep = nextp) {
-        nextp = VN_AS(nodep->nextp(), NodeModule);
-        if (VN_IS(nodep, Class)) continue;  // Class included earlier
-        putns(nodep, "#include \"" + EmitCUtil::prefixNameProtect(nodep) + ".h\"\n");
-    }
-
-    if (v3Global.dpi()) {
-        puts("\n// DPI TYPES for DPI Export callbacks (Internal use)\n");
-        std::set<std::string> types;  // Remove duplicates and sort
-        for (const auto& itpair : m_scopeFuncs) {
-            const AstCFunc* const funcp = itpair.second.m_cfuncp;
-            if (!funcp->dpiExportImpl()) continue;
-            const std::string cbtype
-                = protect(v3Global.opt.prefix() + "__Vcb_" + funcp->cname() + "_t");
-            const std::string functype = funcp->rtnTypeVoid() + " (*) (" + cFuncArgs(funcp) + ")";
-            types.emplace("using " + cbtype + " = " + functype + ";\n");
-        }
-        for (const std::string& type : types) puts(type);
-    }
-
-    puts("\n// SYMS CLASS (contains all model state)\n");
-    puts("class alignas(VL_CACHE_LINE_BYTES) " + symClassName()
-         + " final : public VerilatedSyms {\n");
+    puts("\n// SYMS STATE CLASS (contains all model state other than module instances)\n");
+    puts("class " + EmitCUtil::symsStateClassName() + " VL_NOT_FINAL : public VerilatedSyms {\n");
     ofp()->putsPrivate(false);  // public:
 
     puts("// INTERNAL STATE\n");
     puts(topClassName() + "* const __Vm_modelp;\n");
+    puts("const char* const __Vm_namep;  ///< Name of this model, as name() would return\n");
 
     if (v3Global.needTraceDumper()) {
         // __Vm_dumperp is local, otherwise we wouldn't know what design's eval()
@@ -1011,16 +996,6 @@ void EmitCSyms::emitSymHdr() {
         puts("VlPgoProfiler<" + std::to_string(ExecMTask::numUsedIds()) + "> _vm_pgoProfiler;\n");
     }
 
-    puts("\n// MODULE INSTANCE STATE\n");
-    for (const ScopeModPair& itpair : m_scopes) {
-        const AstScope* const scopep = itpair.first;
-        const AstNodeModule* const modp = itpair.second;
-        if (VN_IS(modp, Class)) continue;
-        const std::string name = EmitCUtil::prefixNameProtect(modp);
-        ofp()->printf("%-30s ", name.c_str());
-        putns(scopep, VIdProtect::protectIf(scopep->nameDotless(), scopep->protect()) + ";\n");
-    }
-
     if (m_coverBins) {
         puts("\n// COVERAGE\n");
         puts(v3Global.opt.threads() > 1 ? "std::atomic<uint32_t>" : "uint32_t");
@@ -1043,14 +1018,12 @@ void EmitCSyms::emitSymHdr() {
     }
 
     puts("\n// CONSTRUCTORS\n");
-    puts(symClassName() + "(VerilatedContext* contextp, const char* namep, " + topClassName()
-         + "* modelp);\n");
-    puts("~" + symClassName() + "();\n");
-
-    for (const std::string& funcName : m_splitFuncNames) { puts("void " + funcName + "();\n"); }
+    // Defined in the symbol table implementation file, as it needs the model class
+    puts(EmitCUtil::symsStateClassName() + "(VerilatedContext* contextp, const char* namep, "
+         + topClassName() + "* modelp);\n");
 
     puts("\n// METHODS\n");
-    puts("const char* name() const { return TOP.vlNamep; }\n");
+    puts("const char* name() const override { return __Vm_namep; }\n");
 
     if (v3Global.hasEvents()) {
         if (v3Global.assignsEvents()) {
@@ -1082,8 +1055,73 @@ void EmitCSyms::emitSymHdr() {
         puts("void _traceDumpOpen();\n");
         puts("void _traceDumpClose();\n");
     }
+    puts("};\n");
+
+    ofp()->putsEndGuard();
+    closeOutputFile();
+}
+
+void EmitCSyms::emitSymHdr() {
+    UINFO(6, __FUNCTION__ << ": ");
+    openNewOutputHeaderFile(symClassName(), "Symbol table internal header");
+    puts("//\n");
+    puts("// Internal details; most calling programs do not need this header,\n");
+    puts("// unless using verilator public meta comments.\n");
+
+    ofp()->putsGuard();
+
+    puts("\n");
+    ofp()->putsIntTopInclude();
+    puts("#include \"" + EmitCUtil::symsStateClassName() + ".h\"\n");
+
+    puts("\n// INCLUDE MODEL CLASS\n");
+    puts("\n#include \"" + topClassName() + ".h\"\n");
+
+    puts("\n// INCLUDE MODULE CLASSES\n");
+    for (AstNodeModule *nodep = v3Global.rootp()->modulesp(), *nextp; nodep; nodep = nextp) {
+        nextp = VN_AS(nodep->nextp(), NodeModule);
+        if (VN_IS(nodep, Class)) continue;  // Class included earlier
+        putns(nodep, "#include \"" + EmitCUtil::prefixNameProtect(nodep) + ".h\"\n");
+    }
+
+    if (v3Global.dpi()) {
+        puts("\n// DPI TYPES for DPI Export callbacks (Internal use)\n");
+        std::set<std::string> types;  // Remove duplicates and sort
+        for (const auto& itpair : m_scopeFuncs) {
+            const AstCFunc* const funcp = itpair.second.m_cfuncp;
+            if (!funcp->dpiExportImpl()) continue;
+            const std::string cbtype
+                = protect(v3Global.opt.prefix() + "__Vcb_" + funcp->cname() + "_t");
+            const std::string functype = funcp->rtnTypeVoid() + " (*) (" + cFuncArgs(funcp) + ")";
+            types.emplace("using " + cbtype + " = " + functype + ";\n");
+        }
+        for (const std::string& type : types) puts(type);
+    }
+
+    puts("\n// SYMS CLASS (contains all model state)\n");
+    puts("class alignas(VL_CACHE_LINE_BYTES) " + symClassName() + " final : public "
+         + EmitCUtil::symsStateClassName() + " {\n");
+    ofp()->putsPrivate(false);  // public:
+
+    puts("\n// MODULE INSTANCE STATE\n");
+    for (const ScopeModPair& itpair : m_scopes) {
+        const AstScope* const scopep = itpair.first;
+        const AstNodeModule* const modp = itpair.second;
+        if (VN_IS(modp, Class)) continue;
+        const std::string name = EmitCUtil::prefixNameProtect(modp);
+        ofp()->printf("%-30s ", name.c_str());
+        putns(scopep, VIdProtect::protectIf(scopep->nameDotless(), scopep->protect()) + ";\n");
+    }
+
+    puts("\n// CONSTRUCTORS\n");
+    puts(symClassName() + "(VerilatedContext* contextp, const char* namep, " + topClassName()
+         + "* modelp);\n");
+    puts("~" + symClassName() + "();\n");
+
+    for (const std::string& funcName : m_splitFuncNames) { puts("void " + funcName + "();\n"); }
 
     if (v3Global.opt.savable()) {
+        puts("\n// METHODS\n");
         puts("void " + protect("__Vserialize") + "(VerilatedSerialize& os);\n");
         puts("void " + protect("__Vdeserialize") + "(VerilatedDeserialize& os);\n");
     }
@@ -1098,6 +1136,7 @@ void EmitCSyms::emitSymImpPreamble() {
 
     // Includes
     puts("#include \"" + EmitCUtil::pchClassName() + ".h\"\n");
+    puts("#include \"" + symClassName() + ".h\"\n");
     puts("\n");
     // Declarations for DPI Export implementation functions
     bool needsNewLine = false;
@@ -1571,10 +1610,13 @@ void EmitCSyms::emitSymImp(const AstNetlist* netlistp) {
     // Constructor
     const std::string ctorArgs
         = "VerilatedContext* contextp, const char* namep, " + topClassName() + "* modelp";
-    puts(symClassName() + "::" + symClassName() + "(" + ctorArgs + ")\n");
+    // Symbol table state base class constructor
+    puts(EmitCUtil::symsStateClassName() + "::" + EmitCUtil::symsStateClassName() + "(" + ctorArgs
+         + ")\n");
     puts("    : VerilatedSyms{contextp}\n");
     puts("    // Setup internal state of the Syms class\n");
     puts("    , __Vm_modelp{modelp}\n");
+    puts("    , __Vm_namep{namep}\n");
     puts("    , __Vm_didInit{modelp->m_didInit}\n");
     if (v3Global.opt.mtasks()) {
         puts("    , __Vm_threadPoolp{static_cast<VlThreadPool*>(contextp->threadPoolp())}\n");
@@ -1586,6 +1628,10 @@ void EmitCSyms::emitSymImp(const AstNetlist* netlistp) {
     if (v3Global.opt.profPgo() && !v3Global.opt.libCreate().empty()) {
         puts("    , _vm_pgoProfiler{" + std::to_string(v3Global.currentHierBlockCost()) + "}\n");
     }
+    puts("{\n}\n\n");
+
+    puts(symClassName() + "::" + symClassName() + "(" + ctorArgs + ")\n");
+    puts("    : " + EmitCUtil::symsStateClassName() + "{contextp, namep, modelp}\n");
     {
         const AstScope* const scopep = netlistp->topScopep()->scopep();
         puts("    // Setup top module instance\n");
@@ -1611,14 +1657,14 @@ void EmitCSyms::emitSymImp(const AstNetlist* netlistp) {
     // Methods
     if (v3Global.needTraceDumper()) {
         if (!optSystemC()) {
-            puts("\nvoid " + symClassName() + "::_traceDump() {\n");
+            puts("\nvoid " + EmitCUtil::symsStateClassName() + "::_traceDump() {\n");
             puts("const VerilatedLockGuard lock{__Vm_dumperMutex};\n");
             // Caller checked for __Vm_dumperp non-nullptr
             puts("__Vm_dumperp->dump(VL_TIME_Q());\n");
             puts("}\n");
         }
 
-        puts("\nvoid " + symClassName() + "::_traceDumpOpen() {\n");
+        puts("\nvoid " + EmitCUtil::symsStateClassName() + "::_traceDumpOpen() {\n");
         puts("const VerilatedLockGuard lock{__Vm_dumperMutex};\n");
         puts("if (VL_UNLIKELY(!__Vm_dumperp)) {\n");
         puts("__Vm_dumperp = new " + v3Global.opt.traceClassLang() + "();\n");
@@ -1629,7 +1675,7 @@ void EmitCSyms::emitSymImp(const AstNetlist* netlistp) {
         puts("}\n");
         puts("}\n");
 
-        puts("\nvoid " + symClassName() + "::_traceDumpClose() {\n");
+        puts("\nvoid " + EmitCUtil::symsStateClassName() + "::_traceDumpClose() {\n");
         puts("const VerilatedLockGuard lock{__Vm_dumperMutex};\n");
         puts("__Vm_dumping = false;\n");
         puts("VL_DO_CLEAR(delete __Vm_dumperp, __Vm_dumperp = nullptr);\n");

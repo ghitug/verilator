@@ -979,7 +979,7 @@ const std::vector<AstCFunc*> createThreadFunctions(const ThreadSchedule& schedul
 
         // Setup vlSelf and vlSyms
         funcp->addStmtsp(new AstCStmt{fl, EmitCUtil::voidSelfAssign(modp)});
-        funcp->addStmtsp(new AstCStmt{fl, EmitCUtil::symClassAssign()});
+        funcp->addStmtsp(new AstCStmt{fl, EmitCUtil::symFullClassAssign()});
 
         // Invoke each mtask scheduled to this thread from the thread function
         for (const ExecMTask* const mtaskp : thread) {

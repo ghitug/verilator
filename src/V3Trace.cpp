@@ -708,7 +708,7 @@ class TraceVisitor final : public VNVisitor {
             // Top functions
             funcp->argTypes("void* voidSelf, " + bufArg);
             funcp->addStmtsp(new AstCStmt{flp, EmitCUtil::voidSelfAssign(m_topModp)});
-            funcp->addStmtsp(new AstCStmt{flp, EmitCUtil::symClassAssign()});
+            funcp->addStmtsp(new AstCStmt{flp, EmitCUtil::symFullClassAssign()});
             // Add global activity check to change dump functions
             if (traceType == VTraceType::CHANGE) {  //
                 funcp->addStmtsp(
@@ -1038,7 +1038,7 @@ class TraceVisitor final : public VNVisitor {
         cleanupFuncp->isLoose(true);
         m_topScopep->addBlocksp(cleanupFuncp);
         cleanupFuncp->addStmtsp(new AstCStmt{fl, EmitCUtil::voidSelfAssign(m_topModp)});
-        cleanupFuncp->addStmtsp(new AstCStmt{fl, EmitCUtil::symClassAssign()});
+        cleanupFuncp->addStmtsp(new AstCStmt{fl, EmitCUtil::symFullClassAssign()});
 
         // Register it
         {

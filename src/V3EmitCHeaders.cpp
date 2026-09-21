@@ -148,7 +148,7 @@ class EmitCHeader final : public EmitCConstInit {
             }
         } else {  // not class
             putsDecoration(nullptr, "\n// INTERNAL VARIABLES\n");
-            puts(EmitCUtil::symClassName() + "* vlSymsp;\n");
+            puts(EmitCUtil::symsStateClassName() + "* vlSymsp;\n");
             puts("const char* vlNamep;\n");
             // Allocate object-local coverage counters only on modules that
             // contain emitted coverage declarations.
@@ -191,7 +191,8 @@ class EmitCHeader final : public EmitCConstInit {
         // construction/destruction code
         const std::string name = EmitCUtil::prefixNameProtect(modp);
         putsDecoration(nullptr, "\n// CONSTRUCTORS\n");
-        const std::string ctorArgs = EmitCUtil::symClassName() + "* symsp, const char* namep";
+        const std::string ctorArgs
+            = EmitCUtil::symsStateClassName() + "* symsp, const char* namep";
         if (modp->isTop()) {
             putns(modp, name + "(" + ctorArgs + ");\n");
             putns(modp, "~" + name + "();\n");
@@ -639,7 +640,7 @@ class EmitCHeader final : public EmitCConstInit {
         }
 
         // Forward declarations required by this AstNodeModule
-        puts("\nclass " + EmitCUtil::symClassName() + ";\n");
+        puts("\nclass " + EmitCUtil::symsStateClassName() + ";\n");
 
         // From `systemc_header
         emitSystemCSection(modp, VSystemCSectionType::HDR);

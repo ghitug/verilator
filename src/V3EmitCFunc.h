@@ -113,6 +113,65 @@ public:
 };
 
 // ######################################################################
+//  Determine whether emitted code needs the complete symbol table type
+
+// Most generated code only touches model state that lives in the design-independent
+// <prefix>__SymsState base class. Code that refers to another scope (or hands the symbol
+// table to something that will) needs the complete <prefix>__Syms definition, and hence
+// every module header. This visitor finds the latter, so the former can be emitted into
+// translation units that do not depend on the design's module set.
+class EmitCNeedsFullSyms final : public VNVisitorConst {
+    bool m_needs = false;  // Result
+
+    // METHODS
+    void checkText(const std::string& text) {
+        // Raw text emitted by earlier passes. All 'vlSymsp->' members it names live in the
+        // state base class, bar an explicit cast to the complete type (see V3Task).
+        if (text.find("vlSymsp->TOP") != string::npos
+            || text.find(EmitCUtil::symClassName()) != string::npos) {
+            m_needs = true;
+        }
+    }
+    void checkArgTypes(const std::string& argTypes) {
+        // Passing the symbol table on to a function that takes the complete type
+        if (argTypes.find("vlSymsp") != string::npos) m_needs = true;
+    }
+
+    // VISITORS
+    void visit(AstNodeVarRef* nodep) override {
+        if (nodep->selfPointer().isVlSym()) m_needs = true;
+        iterateChildrenConst(nodep);
+    }
+    void visit(AstCCall* nodep) override {
+        if (nodep->selfPointer().isVlSym()) m_needs = true;
+        checkArgTypes(nodep->argTypes());
+        iterateChildrenConst(nodep);
+    }
+    void visit(AstNodeCCall* nodep) override {
+        checkArgTypes(nodep->argTypes());
+        iterateChildrenConst(nodep);
+    }
+    void visit(AstCFunc* nodep) override {
+        // A function taking the symbol table explicitly takes the complete type
+        checkArgTypes(nodep->argTypes());
+        iterateChildrenConst(nodep);
+    }
+    void visit(AstText* nodep) override { checkText(nodep->text()); }
+    void visit(AstNode* nodep) override { iterateChildrenConst(nodep); }
+
+    explicit EmitCNeedsFullSyms(AstNode* nodep) { iterateConst(nodep); }
+
+public:
+    static bool check(AstNode* nodep) { return EmitCNeedsFullSyms{nodep}.m_needs; }
+    static bool check(const std::vector<AstCFunc*>& funcps) {
+        for (AstCFunc* const funcp : funcps) {
+            if (check(funcp)) return true;
+        }
+        return false;
+    }
+};
+
+// ######################################################################
 //  Emit statements and expressions
 
 class EmitCFunc VL_NOT_FINAL : public EmitCConstInit {
@@ -433,7 +492,10 @@ public:
             if (!nodep->isStatic()) {  // Standard prologue
                 m_useSelfForThis = true;
                 if (!VN_IS(m_modp, Class)) {
-                    puts(EmitCUtil::symClassAssign());  // Uses vlSelf
+                    // Uses vlSelf. Only take the complete symbol table type if this function
+                    // actually needs it, so the enclosing file can avoid including it.
+                    puts(EmitCNeedsFullSyms::check(nodep) ? EmitCUtil::symFullClassAssign()
+                                                          : EmitCUtil::symClassAssign());
                 } else {
                     puts("(void)vlSelf;  // Prevent unused variable warning\n");
                 }

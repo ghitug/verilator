@@ -49,8 +49,10 @@ class EmitCPch final : public EmitCBaseVisitorConst {
         if (v3Global.dpi()) puts("#include \"verilated_dpi.h\"\n");
 
         puts("\n");
-        puts("#include \"" + EmitCUtil::symClassName() + ".h\"\n");
-        puts("#include \"" + EmitCUtil::topClassName() + ".h\"\n");
+        // Note the full symbol table (and hence every module header) is deliberately not
+        // included here. Doing so would make every translation unit depend on every module,
+        // defeating incremental compilation caches whenever the design's module set changes.
+        puts("#include \"" + EmitCUtil::symsStateClassName() + ".h\"\n");
 
         puts("\n// Additional include files added using '--compiler-include'\n");
         for (const string& filename : v3Global.opt.compilerIncludes()) {

@@ -316,7 +316,7 @@ void EmitCFunc::displayNode(AstNode* nodep, AstSFormatF* fmtp,  // fmtp is nullp
         UASSERT_OBJ(scopenamep, nodep, "Display with %m but no AstScopeName");
         const string suffix = scopenamep->scopePrettySymName();
         ofp()->puts(", '"s + VFormatAttr{VFormatAttr::SCOPE}.ascii() + "'");
-        ofp()->puts(",vlSymsp->name(),");
+        ofp()->puts(",vlSymsp->__Vm_namep,");
         ofp()->putsQuoted(suffix);
     }
 

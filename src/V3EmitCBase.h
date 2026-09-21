@@ -60,9 +60,25 @@ public:
     static string symClassName() VL_MT_STABLE {
         return v3Global.opt.prefix() + "_" + VIdProtect::protect("_Syms");
     }
+    // Name of the design-independent base of the symbol table class. Holds all model state
+    // other than the module instances, so translation units that do not reference another
+    // scope need not see the full symbol table definition (and hence every module header).
+    static string symsStateClassName() VL_MT_STABLE {
+        return v3Global.opt.prefix() + "_" + VIdProtect::protect("_SymsState");
+    }
+    // Functions taking the symbol table explicitly (class methods) always take the complete
+    // type, as they may reference any scope. Their callers must hold a complete type too,
+    // which EmitCFunc::funcNeedsFullSyms detects.
     static string symClassVar() { return symClassName() + "* __restrict vlSymsp"; }
     static string symClassAssign() {
-        return symClassName() + "* const __restrict vlSymsp VL_ATTR_UNUSED = vlSelf->vlSymsp;\n";
+        return symsStateClassName()
+               + "* const __restrict vlSymsp VL_ATTR_UNUSED = vlSelf->vlSymsp;\n";
+    }
+    // As symClassAssign, but for functions that reference another scope, and so need the
+    // complete symbol table type. The downcast is compile-time only, so costs nothing.
+    static string symFullClassAssign() {
+        return symClassName() + "* const __restrict vlSymsp VL_ATTR_UNUSED = static_cast<"
+               + symClassName() + "*>(vlSelf->vlSymsp);\n";
     }
     static string topClassName() VL_MT_SAFE {  // Return name of top wrapper module
         return v3Global.opt.prefix();
