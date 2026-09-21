@@ -19,9 +19,9 @@ state_h = test.obj_dir + "/" + test.vm_prefix + "__SymsState.h"
 test.file_grep_not(state_h, r'#include "' + test.vm_prefix + r'_')
 
 # The full symbol table derives from it, and is what includes the module headers
-test.file_grep(test.obj_dir + "/" + test.vm_prefix + "__Syms.h",
-               r'class .*' + test.vm_prefix + r'__Syms\b.*: public ' + test.vm_prefix +
-               r'__SymsState')
+test.file_grep(
+    test.obj_dir + "/" + test.vm_prefix + "__Syms.h",
+    r'class .*' + test.vm_prefix + r'__Syms\b.*: public ' + test.vm_prefix + r'__SymsState')
 
 # The precompiled header must stay design independent, or every translation unit
 # depends on every module header again
