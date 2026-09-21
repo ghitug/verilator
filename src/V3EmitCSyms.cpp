@@ -1300,15 +1300,12 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
         const AstNodeModule* const modp = i.second;
         const AstScope* const abovep = scopep->aboveScopep();
         if (!abovep) continue;
+        // Only scopes the enclosing scope class holds a pointer to
+        if (!EmitCUtil::scopeIsPointedTo(modp)) continue;
 
         const std::string protName = VIdProtect::protectWordsIf(scopep->name(), scopep->protect());
         std::string stmt;
-        if (VN_IS(modp, ClassPackage)) {
-            // ClassPackage modules seem to be a bit out of place, so hard code...
-            stmt += "TOP";
-        } else {
-            stmt += VIdProtect::protectIf(abovep->nameDotless(), abovep->protect());
-        }
+        stmt += VIdProtect::protectIf(abovep->nameDotless(), abovep->protect());
         stmt += ".";
         stmt += protName.substr(protName.rfind('.') + 1);
         stmt += " = &";

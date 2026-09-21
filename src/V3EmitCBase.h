@@ -57,6 +57,13 @@ public:
                + "*>(voidSelf);\n";
     }
     static string pchClassName() VL_MT_STABLE { return v3Global.opt.prefix() + "__pch"; }
+    // Whether the enclosing scope class holds a pointer to the scope of 'modp'. Only scopes of
+    // ordinary modules are ever reached that way (see V3Descope::descopedSelfPointer); packages
+    // and class packages are singletons and always reached through the symbol table, so a
+    // pointer to them would be dead weight -- and, being a member, would change the layout of
+    // every enclosing scope class whenever a package or class is added to the design.
+    static bool scopeIsPointedTo(const AstNodeModule* modp) { return VN_IS(modp, Module); }
+    static bool cellIsPointedTo(const AstCell* cellp) { return scopeIsPointedTo(cellp->modp()); }
     static string symClassName() VL_MT_STABLE {
         return v3Global.opt.prefix() + "_" + VIdProtect::protect("_Syms");
     }

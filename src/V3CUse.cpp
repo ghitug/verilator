@@ -26,6 +26,8 @@
 
 #include "V3CUse.h"
 
+#include "V3EmitCBase.h"
+
 VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
@@ -86,8 +88,11 @@ class CUseVisitor final : public VNVisitorConst {
     }
     void visit(AstCell* nodep) override {
         if (nodep->user1SetOnce()) return;  // Process once
-        // Currently no IMP_INCLUDE because we include __Syms which has them all
-        addNewUse(nodep, VUseType::INT_FWD_CLASS, nodep->modp()->name());
+        // Only cells the enclosing scope class holds a pointer to need declaring; the rest
+        // are reached through the symbol table, which has them all
+        if (EmitCUtil::cellIsPointedTo(nodep)) {
+            addNewUse(nodep, VUseType::INT_FWD_CLASS, nodep->modp()->name());
+        }
         iterateChildrenConst(nodep);
     }
 

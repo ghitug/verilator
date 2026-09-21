@@ -37,6 +37,17 @@ class EmitCModel final : public EmitCFunc {
 
     // METHODS
 
+    // The sole scope of the module 'cellp' refers to. Only valid for singleton modules, that
+    // is packages and class packages, which is all this is used for. Their scope carries no
+    // link back to this cell, as V3Class creates the two independently.
+    static const AstScope* cellScopep(const AstCell* cellp) {
+        const AstScope* resultp = nullptr;
+        cellp->modp()->foreach([&](const AstScope* scopep) {
+            if (scopep->modp() == cellp->modp()) resultp = scopep;
+        });
+        return resultp;
+    }
+
     CFuncVector findFuncps(std::function<bool(const AstCFunc*)> cb) {
         CFuncVector funcps;
         for (AstNode* nodep = m_modp->stmtsp(); nodep; nodep = nodep->nextp()) {
@@ -84,6 +95,13 @@ class EmitCModel final : public EmitCFunc {
         puts("class " + EmitCUtil::prefixNameProtect(modp) + ";\n");  // For rootp pointer only
         for (const string& base : v3Global.opt.traceClassLangs()) puts("class " + base + ";\n");
         emitModCUse(modp, VUseType::INT_FWD_CLASS);  // Note: This is needed for cell forwarding
+        // The model class exposes a pointer to every cell under the root module, including the
+        // singleton package and class package scopes the root scope class does not point to
+        for (AstNode* nodep = modp->stmtsp(); nodep; nodep = nodep->nextp()) {
+            const AstCell* const cellp = VN_CAST(nodep, Cell);
+            if (!cellp || EmitCUtil::cellIsPointedTo(cellp)) continue;
+            putns(cellp, "class " + EmitCUtil::prefixNameProtect(cellp->modp()) + ";\n");
+        }
 
         puts("\n");
 
@@ -329,7 +347,17 @@ class EmitCModel final : public EmitCFunc {
             if (const AstCell* const cellp = VN_CAST(nodep, Cell)) {
                 const string protName = cellp->nameProtect();
                 puts("    , ");
-                putns(cellp, protName + "{vlSymsp->TOP." + protName + "}\n");
+                if (EmitCUtil::cellIsPointedTo(cellp)) {
+                    putns(cellp, protName + "{vlSymsp->TOP." + protName + "}\n");
+                } else {
+                    // The root scope holds no pointer to this scope, so go via the symbol table
+                    const AstScope* const scopep = cellScopep(cellp);
+                    UASSERT_OBJ(scopep, cellp, "No scope for cell under the root module");
+                    putns(cellp,
+                          protName + "{&vlSymsp->"
+                              + VIdProtect::protectIf(scopep->nameDotless(), scopep->protect())
+                              + "}\n");
+                }
             }
         }
 
