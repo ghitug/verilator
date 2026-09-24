@@ -112,8 +112,17 @@ class HasherVisitor final : public VNVisitorConst {
         });
     }
     void visit(AstNodeUOrStructDType* nodep) override {
-        m_hash += hashNodeAndIterate(nodep, false, false, [this, nodep]() {  //
-            m_hash += nodep->uniqueNum();
+        // Hash by local, stable content rather than uniqueNum(), which is a
+        // design-wide creation counter, so that unrelated type declarations
+        // elsewhere do not change this hash. Member dtypes are not iterated to
+        // avoid recursion; sameNode() still distinguishes equal-looking types.
+        m_hash += hashNodeAndIterate(nodep, false, false, [this, nodep]() {
+            m_hash += nodep->name();
+            m_hash += nodep->packed();
+            for (const AstMemberDType* itemp = nodep->membersp(); itemp;
+                 itemp = VN_AS(itemp->nextp(), MemberDType)) {
+                m_hash += itemp->name();
+            }
         });
     }
     void visit(AstParamTypeDType* nodep) override {
@@ -128,9 +137,8 @@ class HasherVisitor final : public VNVisitorConst {
         });
     }
     void visit(AstDefImplicitDType* nodep) override {
-        m_hash += hashNodeAndIterate(nodep, HASH_DTYPE, HASH_CHILDREN, [this, nodep]() {  //
-            m_hash += nodep->uniqueNum();
-        });
+        // Children identify the type; see AstNodeUOrStructDType on uniqueNum()
+        m_hash += hashNodeAndIterate(nodep, HASH_DTYPE, HASH_CHILDREN, []() {});
     }
     void visit(AstAssocArrayDType* nodep) override {
         m_hash += hashNodeAndIterate(nodep, false, HASH_CHILDREN, [this, nodep]() {
@@ -205,8 +213,13 @@ class HasherVisitor final : public VNVisitorConst {
         m_hash += hashNodeAndIterate(nodep, false, HASH_CHILDREN, []() {});
     }
     void visit(AstEnumDType* nodep) override {
-        m_hash += hashNodeAndIterate(nodep, false, false, [this, nodep]() {  //
-            m_hash += nodep->uniqueNum();
+        // See AstNodeUOrStructDType on uniqueNum()
+        m_hash += hashNodeAndIterate(nodep, false, false, [this, nodep]() {
+            m_hash += nodep->name();
+            for (const AstEnumItem* itemp = nodep->itemsp(); itemp;
+                 itemp = VN_AS(itemp->nextp(), EnumItem)) {
+                m_hash += itemp->name();
+            }
         });
     }
 
