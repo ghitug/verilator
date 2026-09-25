@@ -7592,6 +7592,12 @@ class WidthVisitor final : public VNVisitor {
                     handle.relink(newp);
                     pinp = newp;
                 }
+                // Mark writable arguments before widthing, as V3WidthSel picks read or
+                // write forms (e.g. ARRAY_AT vs ARRAY_AT_WRITE) from the access.
+                // Method calls are only resolved here, so V3LinkLValue could not.
+                if (portp->isWritable() && !pinp->didWidth()) {
+                    V3LinkLValue::linkLValueSet(pinp, portp->direction().pinAccess());
+                }
                 // AstPattern requires assignments to pass datatype on PRELIM
                 VL_DO_DANGLING(userIterate(pinp, WidthVP{portp->dtypep(), PRELIM}.p()), pinp);
             }
@@ -7672,9 +7678,6 @@ class WidthVisitor final : public VNVisitor {
                     pinp->unlinkFrBack(&relinkHandle);
                     AstNodeExpr* const newp = new AstResizeLValue{pinp->fileline(), pinp};
                     relinkHandle.relink(newp);
-                }
-                if (portp->isWritable()) {
-                    V3LinkLValue::linkLValueSet(pinp, portp->direction().pinAccess());
                 }
                 if (portp->direction() != VDirection::REF
                     && !(portp->basicp()
