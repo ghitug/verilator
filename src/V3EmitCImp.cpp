@@ -356,8 +356,6 @@ class EmitCImp final : public EmitCFunc {
     // Predicate to check if we actually need to emit anything into the common implementation file.
     // Used to avoid creating empty output files.
     bool hasCommonImp(const AstNodeModule* modp) const {
-        // Nothing to emit if no module!
-        if (!modp) return false;
         // We always need the slow file
         if (m_slow) return true;
         // The fast file is only required when we have `systemc_implementation nodes
@@ -388,19 +386,9 @@ class EmitCImp final : public EmitCFunc {
         }
     }
     void emitCommonImp(const AstNodeModule* modp) {
-        const AstClass* const classp
-            = VN_IS(modp, ClassPackage) ? VN_AS(modp, ClassPackage)->classp() : nullptr;
-
-        if (hasCommonImp(modp) || hasCommonImp(classp)) {
+        if (hasCommonImp(modp)) {
             openNextOutputFile(m_fileBaseName);
-
             doCommonImp(modp);
-            if (classp) {
-                VL_RESTORER(m_modp);
-                m_modp = classp;
-                doCommonImp(classp);
-            }
-
             closeOutputFile();
         }
     }
@@ -423,12 +411,7 @@ class EmitCImp final : public EmitCFunc {
 
         gather(modp);
         VL_RESTORER(m_classOrPackage);
-        if (const AstClassPackage* const packagep = VN_CAST(modp, ClassPackage)) {
-            m_classOrPackage = packagep;
-            gather(packagep->classp());
-        } else if (VN_IS(modp, Class)) {
-            m_classOrPackage = modp;  // Class without a static portion, so no package
-        }
+        if (VN_IS(modp, ClassPackage) || VN_IS(modp, Class)) m_classOrPackage = modp;
 
         // Do not create empty files
         if (funcps.empty()) return;
@@ -465,11 +448,6 @@ class EmitCImp final : public EmitCFunc {
         UINFO(5, "  Emitting implementation of " << EmitCUtil::prefixNameProtect(modp));
 
         m_modp = modp;
-
-        // Emit implementation of this module, if this is an AstClassPackage, then put the
-        // corresponding AstClass implementation in the same file as often optimizations are
-        // possible when both are seen by the compiler
-        // TODO: is the above comment still true?
 
         // Emit implementations of common parts
         emitCommonImp(modp);
@@ -936,8 +914,6 @@ void V3EmitC::emitcImp() {
 
         // Process each module in turn
         for (const AstNode* nodep = v3Global.rootp()->modulesp(); nodep; nodep = nodep->nextp()) {
-            const AstClass* const classp = VN_CAST(nodep, Class);
-            if (classp && classp->classOrPackagep()) continue;  // Imped with ClassPackage
             const AstNodeModule* const modp = VN_AS(nodep, NodeModule);
             if (modp->isConstPool()) continue;  // Emitted by V3EmitCConstPool
             cfiles.emplace_back();

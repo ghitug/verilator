@@ -639,11 +639,8 @@ class EmitCHeader final : public EmitCConstInit {
         if (const AstClass* const classp = VN_CAST(modp, Class)) {
             for (const AstClassExtends* extp = classp->extendsp(); extp;
                  extp = VN_AS(extp->nextp(), ClassExtends)) {
-                const AstClass* const basep = extp->classp();
-                // Classes without a static portion have no package, and own their header
-                const AstNodeModule* hdrModp = basep;
-                if (basep->classOrPackagep()) hdrModp = basep->classOrPackagep();
-                putns(extp, "#include \"" + EmitCUtil::prefixNameProtect(hdrModp) + ".h\"\n");
+                putns(extp, "#include \"" + EmitCUtil::prefixNameProtect(extp->classp())
+                                + ".h\"\n");
             }
         }
 
@@ -733,20 +730,11 @@ class EmitCHeader final : public EmitCConstInit {
         auto add_to_cuse_set = [&](string s) { cuse_set.insert(s); };
 
         forModCUse(modp, VUseType::INT_FWD_CLASS | VUseType::INT_INCLUDE, add_to_cuse_set);
-        if (const AstClassPackage* const packagep = VN_CAST(modp, ClassPackage)) {
-            forModCUse(packagep->classp(), VUseType::INT_INCLUDE | VUseType::INT_FWD_CLASS,
-                       add_to_cuse_set);
-        }
 
         for (const string& s : cuse_set) puts(s);
         puts("\n");
 
         emitAll(modp);
-
-        if (const AstClassPackage* const packagep = VN_CAST(modp, ClassPackage)) {
-            // Put the non-static class implementation in same h file for speed
-            emitAll(packagep->classp());
-        }
 
         ofp()->putsEndGuard();
 
@@ -767,8 +755,6 @@ void V3EmitC::emitcHeaders() {
 
     // Process each module in turn
     for (const AstNode* nodep = v3Global.rootp()->modulesp(); nodep; nodep = nodep->nextp()) {
-        const AstClass* const classp = VN_CAST(nodep, Class);
-        if (classp && classp->classOrPackagep()) continue;  // Declared with the ClassPackage
         const AstNodeModule* const modp = VN_AS(nodep, NodeModule);
         if (modp->isConstPool()) continue;  // Emitted by V3EmitCConstPool
         EmitCHeader::main(modp);

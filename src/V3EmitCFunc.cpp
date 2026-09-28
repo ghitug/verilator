@@ -685,8 +685,9 @@ string EmitCFunc::emitVarResetRecurse(const AstVar* varp, bool constructing,
 void EmitCFunc::emitVarResetScopeHash() {
     if (VL_LIKELY(m_createdScopeHash)) { return; }
     if (m_classOrPackage) {
-        // Hash the package name even for a class whose empty package was deleted,
-        // so reset values do not depend on whether the class has a static portion
+        // A class hashes its package's name, whether or not the package exists, so
+        // reset values match between the class and its package, and do not depend on
+        // whether the class has a static portion
         const std::string name = VN_IS(m_classOrPackage, Class)
                                      ? m_classOrPackage->name() + "__Vclpkg"
                                      : m_classOrPackage->name();
