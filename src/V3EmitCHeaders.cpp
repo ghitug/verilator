@@ -639,9 +639,11 @@ class EmitCHeader final : public EmitCConstInit {
         if (const AstClass* const classp = VN_CAST(modp, Class)) {
             for (const AstClassExtends* extp = classp->extendsp(); extp;
                  extp = VN_AS(extp->nextp(), ClassExtends)) {
-                putns(extp, "#include \""
-                                + EmitCUtil::prefixNameProtect(extp->classp()->classOrPackagep())
-                                + ".h\"\n");
+                const AstClass* const basep = extp->classp();
+                // Classes without a static portion have no package, and own their header
+                const AstNodeModule* hdrModp = basep;
+                if (basep->classOrPackagep()) hdrModp = basep->classOrPackagep();
+                putns(extp, "#include \"" + EmitCUtil::prefixNameProtect(hdrModp) + ".h\"\n");
             }
         }
 
@@ -765,7 +767,8 @@ void V3EmitC::emitcHeaders() {
 
     // Process each module in turn
     for (const AstNode* nodep = v3Global.rootp()->modulesp(); nodep; nodep = nodep->nextp()) {
-        if (VN_IS(nodep, Class)) continue;  // Declared with the ClassPackage
+        const AstClass* const classp = VN_CAST(nodep, Class);
+        if (classp && classp->classOrPackagep()) continue;  // Declared with the ClassPackage
         const AstNodeModule* const modp = VN_AS(nodep, NodeModule);
         if (modp->isConstPool()) continue;  // Emitted by V3EmitCConstPool
         EmitCHeader::main(modp);

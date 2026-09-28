@@ -49,6 +49,13 @@ class ClassVisitor final : public VNVisitor {
     const AstNodeFTask* m_ftaskp = nullptr;  // Current task
     std::vector<std::pair<AstNode*, AstScope*>> m_toScopeMoves;
     std::vector<std::pair<AstNode*, AstNodeModule*>> m_toPackageMoves;
+    struct ClassPackageInfo final {
+        AstClass* classp;  // Class the package was made for
+        AstClassPackage* packagep;  // Package holding the static portion of the class
+        AstCell* cellp;  // Cell instantiating the package under the top module
+        AstScope* scopep;  // Scope of the package
+    };
+    std::vector<ClassPackageInfo> m_classPackages;  // All created class packages
     std::set<AstTypedef*> m_typedefps;  // Contains all typedef nodes
     std::set<AstNodeUOrStructDType*> m_strDtypeps;  // Contains all packed structs and unions
     // Contains all public packed structs and unions, using a queue to
@@ -113,6 +120,7 @@ class ClassVisitor final : public VNVisitor {
             = new AstScope{nodep->fileline(), packagep, classScopep->name(),
                            classScopep->aboveScopep(), classScopep->aboveCellp()};
         packagep->addStmtsp(scopep);
+        m_classPackages.push_back({nodep, packagep, cellp, scopep});
         // Iterate
         VL_RESTORER_CLEAR(m_prefix);
         VL_RESTORER(m_classPackagep);
@@ -255,6 +263,17 @@ public:
             UINFO(9, "moving " << nodep << " to " << modp);
             nodep->unlinkFrBack();
             modp->addStmtsp(nodep);
+        }
+        // Delete class packages left empty by the moves above, so a class with no static
+        // portion does not get an instance in the symbol table
+        for (const ClassPackageInfo& info : m_classPackages) {
+            AstScope* const scopep = info.scopep;
+            if (info.packagep->stmtsp() != scopep || scopep->nextp()) continue;
+            if (scopep->varsp() || scopep->blocksp()) continue;
+            UINFO(9, "deleting empty " << info.packagep);
+            info.classp->classOrPackagep(nullptr);
+            VL_DO_DANGLING(pushDeletep(info.cellp->unlinkFrBack()), info.cellp);
+            VL_DO_DANGLING(pushDeletep(info.packagep->unlinkFrBack()), info.packagep);
         }
         // BFS to mark public typedefs.
         std::set<const AstNodeUOrStructDType*> pubStrDtypeps;

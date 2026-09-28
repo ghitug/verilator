@@ -426,6 +426,8 @@ class EmitCImp final : public EmitCFunc {
         if (const AstClassPackage* const packagep = VN_CAST(modp, ClassPackage)) {
             m_classOrPackage = packagep;
             gather(packagep->classp());
+        } else if (VN_IS(modp, Class)) {
+            m_classOrPackage = modp;  // Class without a static portion, so no package
         }
 
         // Do not create empty files
@@ -934,7 +936,8 @@ void V3EmitC::emitcImp() {
 
         // Process each module in turn
         for (const AstNode* nodep = v3Global.rootp()->modulesp(); nodep; nodep = nodep->nextp()) {
-            if (VN_IS(nodep, Class)) continue;  // Imped with ClassPackage
+            const AstClass* const classp = VN_CAST(nodep, Class);
+            if (classp && classp->classOrPackagep()) continue;  // Imped with ClassPackage
             const AstNodeModule* const modp = VN_AS(nodep, NodeModule);
             if (modp->isConstPool()) continue;  // Emitted by V3EmitCConstPool
             cfiles.emplace_back();

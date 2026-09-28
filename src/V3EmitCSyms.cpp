@@ -948,7 +948,8 @@ void EmitCSyms::emitSymHdr() {
     puts("\n// INCLUDE MODULE CLASSES\n");
     for (AstNodeModule *nodep = v3Global.rootp()->modulesp(), *nextp; nodep; nodep = nextp) {
         nextp = VN_AS(nodep->nextp(), NodeModule);
-        if (VN_IS(nodep, Class)) continue;  // Class included earlier
+        const AstClass* const classp = VN_CAST(nodep, Class);
+        if (classp && classp->classOrPackagep()) continue;  // Included with the ClassPackage
         if (nodep->isConstPool()) continue;  // Special emit rules
         putns(nodep, "#include \"" + EmitCUtil::prefixNameProtect(nodep) + ".h\"\n");
     }
