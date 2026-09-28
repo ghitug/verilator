@@ -639,8 +639,8 @@ class EmitCHeader final : public EmitCConstInit {
         if (const AstClass* const classp = VN_CAST(modp, Class)) {
             for (const AstClassExtends* extp = classp->extendsp(); extp;
                  extp = VN_AS(extp->nextp(), ClassExtends)) {
-                putns(extp, "#include \"" + EmitCUtil::prefixNameProtect(extp->classp())
-                                + ".h\"\n");
+                putns(extp,
+                      "#include \"" + EmitCUtil::prefixNameProtect(extp->classp()) + ".h\"\n");
             }
         }
 
