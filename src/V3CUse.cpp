@@ -52,13 +52,19 @@ class CUseVisitor final : public VNVisitorConst {
         }
     }
 
+    static VUseType classUse(const AstClass* classp) {
+        // std::process header defines VlClassRef<process> operator specializations, which must
+        // be declared before any inline use (e.g. struct operators), so include it at the top
+        if (classp == v3Global.rootp()->stdPackageProcessp()) {
+            return VUseType::INT_INCLUDE | VUseType::IMP_INCLUDE;
+        }
+        return VUseType::INT_FWD_CLASS | VUseType::INT_INCLUDE_AFTER_DEF | VUseType::IMP_INCLUDE;
+    }
+
     // VISITORS
     void visit(AstClassRefDType* nodep) override {
         UINFO(0, "CLASSSSSS = " << nodep);
-        addNewUse(nodep,
-                  VUseType::INT_FWD_CLASS | VUseType::INT_INCLUDE_AFTER_DEF
-                      | VUseType::IMP_INCLUDE,
-                  nodep->classp()->name());
+        addNewUse(nodep, classUse(nodep->classp()), nodep->classp()->name());
     }
     void visit(AstCFunc* nodep) override {
         if (nodep->user1SetOnce()) return;
@@ -84,10 +90,7 @@ class CUseVisitor final : public VNVisitorConst {
         } else if (const AstClassRefDType* const classp
                    = VN_CAST(nodep->skipRefp(), ClassRefDType)) {
             UINFO(0, "Type: " << stypep << " Does not need full include");
-            addNewUse(nodep,
-                      VUseType::INT_FWD_CLASS | VUseType::INT_INCLUDE_AFTER_DEF
-                          | VUseType::IMP_INCLUDE,
-                      classp->name());
+            addNewUse(nodep, classUse(classp->classp()), classp->name());
         } else if (const AstIfaceRefDType* const ifacep
                    = VN_CAST(nodep->skipRefp(), IfaceRefDType)) {
             // Interface references are emitted as a pointer to the interface module
