@@ -55,7 +55,7 @@ class CUseVisitor final : public VNVisitorConst {
     // VISITORS
     void visit(AstClassRefDType* nodep) override {
         UINFO(0, "CLASSSSSS = " << nodep);
-        addNewUse(nodep, VUseType::INT_FWD_CLASS | VUseType::IMP_INCLUDE, nodep->classp()->name());
+        addNewUse(nodep, VUseType::INT_INCLUDE | VUseType::IMP_INCLUDE, nodep->classp()->name());
     }
     void visit(AstCFunc* nodep) override {
         if (nodep->user1SetOnce()) return;
@@ -81,7 +81,7 @@ class CUseVisitor final : public VNVisitorConst {
         } else if (const AstClassRefDType* const classp
                    = VN_CAST(nodep->skipRefp(), ClassRefDType)) {
             UINFO(0, "Type: " << stypep << " Does not need full include");
-            addNewUse(nodep, VUseType::INT_FWD_CLASS | VUseType::IMP_INCLUDE, classp->name());
+            addNewUse(nodep, VUseType::INT_INCLUDE | VUseType::IMP_INCLUDE, classp->name());
         }
     }
     void visit(AstNode* nodep) override {
