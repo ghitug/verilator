@@ -43,7 +43,6 @@ class CUseVisitor final : public VNVisitorConst {
     // MEMBERS
     AstNodeModule* const m_modp;  // Current module
     std::map<std::string, std::pair<FileLine*, VUseType>> m_didUse;  // What we already used
-    bool m_inStructDef = false;  // Iterating members of a struct defined in m_modp's header
 
     // METHODS
     void addNewUse(const AstNode* nodep, VUseType useType, const string& name) {
@@ -53,17 +52,13 @@ class CUseVisitor final : public VNVisitorConst {
         }
     }
 
-    VUseType classUse() const {
-        // Struct operators defined inline in the header need the class declared before them
-        // (e.g. VlClassRef<process> operator specializations), so include at the top
-        if (m_inStructDef) return VUseType::INT_INCLUDE;
-        return VUseType::INT_FWD_CLASS | VUseType::INT_INCLUDE_AFTER_DEF | VUseType::IMP_INCLUDE;
-    }
-
     // VISITORS
     void visit(AstClassRefDType* nodep) override {
         UINFO(0, "CLASSSSSS = " << nodep);
-        addNewUse(nodep, classUse(), nodep->classp()->name());
+        addNewUse(nodep,
+                  VUseType::INT_FWD_CLASS | VUseType::INT_INCLUDE_AFTER_DEF
+                      | VUseType::IMP_INCLUDE,
+                  nodep->classp()->name());
     }
     void visit(AstCFunc* nodep) override {
         if (nodep->user1SetOnce()) return;
@@ -85,13 +80,14 @@ class CUseVisitor final : public VNVisitorConst {
         if (stypep && stypep->classOrPackagep()) {
             UINFO(0, "Type: " << stypep << " Needs full include");
             addNewUse(nodep, VUseType::INT_INCLUDE, stypep->classOrPackagep()->name());
-            VL_RESTORER(m_inStructDef);
-            m_inStructDef = stypep->classOrPackagep() == m_modp;
             iterateChildrenConst(stypep);
         } else if (const AstClassRefDType* const classp
                    = VN_CAST(nodep->skipRefp(), ClassRefDType)) {
             UINFO(0, "Type: " << stypep << " Does not need full include");
-            addNewUse(nodep, classUse(), classp->name());
+            addNewUse(nodep,
+                      VUseType::INT_FWD_CLASS | VUseType::INT_INCLUDE_AFTER_DEF
+                          | VUseType::IMP_INCLUDE,
+                      classp->name());
         } else if (const AstIfaceRefDType* const ifacep
                    = VN_CAST(nodep->skipRefp(), IfaceRefDType)) {
             // Interface references are emitted as a pointer to the interface module
