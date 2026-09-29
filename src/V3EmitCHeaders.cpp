@@ -745,6 +745,12 @@ class EmitCHeader final : public EmitCConstInit {
         //    emitAll(packagep->classp());
         //}
 
+        // Class inline code needs complete types; include after the definition to avoid cycles
+        if (VN_IS(modp, Class)) {
+            puts("\n");
+            forModCUse(modp, VUseType::INT_INCLUDE_AFTER_DEF, [&](const string& s) { puts(s); });
+        }
+
         ofp()->putsEndGuard();
 
         // Close output file

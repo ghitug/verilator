@@ -209,6 +209,13 @@ public:
                     continue;
                 }
 
+                // Full include after the definition requested
+                if (hasUse.containsAny(VUseType::INT_INCLUDE_AFTER_DEF)
+                    && requestedUse.containsAny(VUseType::INT_INCLUDE_AFTER_DEF)) {
+                    action("#include \"" + EmitCUtil::prefixNameProtect(usep) + ".h\"\n");
+                    continue;
+                }
+
                 if (hasUse.containsAny(VUseType::INT_FWD_CLASS)) {
                     action("class " + EmitCUtil::prefixNameProtect(usep) + ";\n");
                 }

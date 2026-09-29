@@ -2166,6 +2166,7 @@ public:
         INT_FWD_CLASS = 1 << 0,  // Interface (.h) needs a forward class declaration
         INT_INCLUDE = 1 << 1,  // Interface (.h) needs an include
         IMP_INCLUDE = 1 << 2,  // Interface (.h) needs an include
+        INT_INCLUDE_AFTER_DEF = 1 << 3,  // Interface (.h) needs an include after the definition
     };
     enum en m_e;
     VUseType()
