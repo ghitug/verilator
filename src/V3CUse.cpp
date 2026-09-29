@@ -82,6 +82,11 @@ class CUseVisitor final : public VNVisitorConst {
                    = VN_CAST(nodep->skipRefp(), ClassRefDType)) {
             UINFO(0, "Type: " << stypep << " Does not need full include");
             addNewUse(nodep, VUseType::INT_INCLUDE | VUseType::IMP_INCLUDE, classp->name());
+        } else if (const AstIfaceRefDType* const ifacep
+                   = VN_CAST(nodep->skipRefp(), IfaceRefDType)) {
+            // Interface references are emitted as a pointer to the interface module
+            addNewUse(nodep, VUseType::INT_FWD_CLASS | VUseType::IMP_INCLUDE,
+                      ifacep->ifaceViaCellp()->name());
         }
     }
     void visit(AstNode* nodep) override {
