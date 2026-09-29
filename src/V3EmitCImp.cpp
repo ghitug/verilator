@@ -16,6 +16,7 @@
 
 #include "V3PchAstMT.h"
 
+#include "V3Ast.h"
 #include "V3EmitC.h"
 #include "V3EmitCFunc.h"
 #include "V3ThreadPool.h"
@@ -44,6 +45,10 @@ class EmitCImp final : public EmitCFunc {
         puts("// See " + EmitCUtil::topClassName() + ".h for the primary calling header\n");
         puts("\n");
         puts("#include \"" + EmitCUtil::pchClassName() + ".h\"\n");
+        if (VN_IS(m_modp, Class)) {
+            puts("#include \"" + EmitCUtil::prefixNameProtect(m_modp) + ".h\"\n");
+        }
+        emitModCUse(m_modp, VUseType::IMP_INCLUDE);
         emitSystemCSection(m_fileModp, VSystemCSectionType::IMP_HDR);
         // Need to emit new lazy declarations
         m_lazyDecls.reset();
@@ -356,8 +361,6 @@ class EmitCImp final : public EmitCFunc {
     // Predicate to check if we actually need to emit anything into the common implementation file.
     // Used to avoid creating empty output files.
     bool hasCommonImp(const AstNodeModule* modp) const {
-        // Nothing to emit if no module!
-        if (!modp) return false;
         // We always need the slow file
         if (m_slow) return true;
         // The fast file is only required when we have `systemc_implementation nodes
@@ -388,21 +391,27 @@ class EmitCImp final : public EmitCFunc {
         }
     }
     void emitCommonImp(const AstNodeModule* modp) {
-        const AstClass* const classp
-            = VN_IS(modp, ClassPackage) ? VN_AS(modp, ClassPackage)->classp() : nullptr;
-
-        if (hasCommonImp(modp) || hasCommonImp(classp)) {
+        if (hasCommonImp(modp)) {
             openNextOutputFile(m_fileBaseName);
-
             doCommonImp(modp);
-            if (classp) {
-                VL_RESTORER(m_modp);
-                m_modp = classp;
-                doCommonImp(classp);
-            }
-
             closeOutputFile();
         }
+
+        //const AstClass* const classp
+        //    = VN_IS(modp, ClassPackage) ? VN_AS(modp, ClassPackage)->classp() : nullptr;
+
+        //if (hasCommonImp(modp) || hasCommonImp(classp)) {
+        //    openNextOutputFile(m_fileBaseName);
+
+        //    doCommonImp(modp);
+        //    if (classp) {
+        //        VL_RESTORER(m_modp);
+        //        m_modp = classp;
+        //        doCommonImp(classp);
+        //    }
+
+        //    closeOutputFile();
+        //}
     }
     void emitCFuncImp(const AstNodeModule* modp) {
         // Functions to be emitted here
@@ -423,10 +432,7 @@ class EmitCImp final : public EmitCFunc {
 
         gather(modp);
         VL_RESTORER(m_classOrPackage);
-        if (const AstClassPackage* const packagep = VN_CAST(modp, ClassPackage)) {
-            m_classOrPackage = packagep;
-            gather(packagep->classp());
-        }
+        if (VN_IS(modp, ClassPackage) || VN_IS(modp, Class)) m_classOrPackage = modp;
 
         // Do not create empty files
         if (funcps.empty()) return;
@@ -934,7 +940,7 @@ void V3EmitC::emitcImp() {
 
         // Process each module in turn
         for (const AstNode* nodep = v3Global.rootp()->modulesp(); nodep; nodep = nodep->nextp()) {
-            if (VN_IS(nodep, Class)) continue;  // Imped with ClassPackage
+            // if (VN_IS(nodep, Class)) continue;  // Imped with ClassPackage
             const AstNodeModule* const modp = VN_AS(nodep, NodeModule);
             if (modp->isConstPool()) continue;  // Emitted by V3EmitCConstPool
             cfiles.emplace_back();

@@ -25,6 +25,7 @@
 
 #include <cmath>
 #include <cstdarg>
+#include <exception>
 
 //######################################################################
 // Set user4p in all CFunc, Var, and coverage declarations to point to the
@@ -187,17 +188,29 @@ public:
     void emitVarDecl(const AstVar* nodep, bool asRef = false);
     void emitVarAccessors(const AstVar* nodep);
     template <typename T_Callable>
-    static void forModCUse(const AstNodeModule* modp, VUseType useType, T_Callable action) {
+    static void forModCUse(const AstNodeModule* modp, VUseType requestedUse, T_Callable action) {
         for (const AstNode* itemp = modp->stmtsp(); itemp; itemp = itemp->nextp()) {
             if (const AstCUse* const usep = VN_CAST(itemp, CUse)) {
-                if (usep->useType().containsAny(useType)) {
-                    if (usep->useType().containsAny(VUseType::INT_INCLUDE)) {
-                        action("#include \"" + EmitCUtil::prefixNameProtect(usep) + ".h\"\n");
-                        continue;  // Forward declaration is not necessary
-                    }
-                    if (usep->useType().containsAny(VUseType::INT_FWD_CLASS)) {
-                        action("class " + EmitCUtil::prefixNameProtect(usep) + ";\n");
-                    }
+                const VUseType hasUse = usep->useType();
+                // Not a match
+                if (!hasUse.containsAny(requestedUse)) { continue; }
+                // TODO :: I guess this needs some better refactor as it's really unreadable now
+
+                // Dependency needs full include
+                if (hasUse.containsAny(VUseType::INT_INCLUDE)) {
+                    action("#include \"" + EmitCUtil::prefixNameProtect(usep) + ".h\"\n");
+                    continue;  // Forward declaration is not necessary
+                }
+
+                // Full include in in imp requested
+                if (hasUse.containsAny(VUseType::IMP_INCLUDE)
+                    && requestedUse.containsAny(VUseType::IMP_INCLUDE)) {
+                    action("#include \"" + EmitCUtil::prefixNameProtect(usep) + ".h\"\n");
+                    continue;
+                }
+
+                if (hasUse.containsAny(VUseType::INT_FWD_CLASS)) {
+                    action("class " + EmitCUtil::prefixNameProtect(usep) + ";\n");
                 }
             }
         }

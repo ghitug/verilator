@@ -55,6 +55,15 @@ class ClassVisitor final : public VNVisitor {
     // mark embedded struct / union public by BFS
     std::queue<AstNodeUOrStructDType*> m_pubStrDtypeps;
 
+    struct ClassPackageInfo final {
+        AstClassPackage* packagep{nullptr};
+        AstClass* classp{nullptr};
+        AstScope* scopep{nullptr};
+        AstCell* cellp{nullptr};
+    };
+
+    std::vector<ClassPackageInfo> m_createdClassPackages;
+
     // METHODS
 
     void recurseImplements(AstClass* nodep) {
@@ -113,6 +122,12 @@ class ClassVisitor final : public VNVisitor {
             = new AstScope{nodep->fileline(), packagep, classScopep->name(),
                            classScopep->aboveScopep(), classScopep->aboveCellp()};
         packagep->addStmtsp(scopep);
+        m_createdClassPackages.push_back(ClassPackageInfo{
+            packagep,
+            nodep,
+            scopep,
+            cellp,
+        });
         // Iterate
         VL_RESTORER_CLEAR(m_prefix);
         VL_RESTORER(m_classPackagep);
@@ -256,6 +271,24 @@ public:
             nodep->unlinkFrBack();
             modp->addStmtsp(nodep);
         }
+
+        for (const auto& classInfo : m_createdClassPackages) {
+            UINFO(0, "Created package for class: " << classInfo.classp);
+            UASSERT_OBJ(classInfo.packagep->stmtsp() == classInfo.scopep, classInfo.classp,
+                        "Scope is always the first statement of class package");
+            // Package non-empty, there is something in the package other beyond scope
+            if (classInfo.scopep->nextp()) continue;
+            // Scope not empty.
+            if (classInfo.scopep->varsp() || classInfo.scopep->blocksp()
+                || classInfo.scopep->inlinesp())
+                continue;
+
+            // Empty package
+            classInfo.classp->classOrPackagep(nullptr);
+            VL_DO_DANGLING(pushDeletep(classInfo.cellp->unlinkFrBack()), classInfo.cellp);
+            VL_DO_DANGLING(pushDeletep(classInfo.packagep->unlinkFrBack()), classInfo.packagep);
+        }
+
         // BFS to mark public typedefs.
         std::set<const AstNodeUOrStructDType*> pubStrDtypeps;
         while (!m_pubStrDtypeps.empty()) {

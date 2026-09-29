@@ -26,6 +26,8 @@
 
 #include "V3CUse.h"
 
+#include "V3Ast.h"
+
 VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
@@ -52,7 +54,8 @@ class CUseVisitor final : public VNVisitorConst {
 
     // VISITORS
     void visit(AstClassRefDType* nodep) override {
-        addNewUse(nodep, VUseType::INT_FWD_CLASS, nodep->classp()->name());
+        UINFO(0, "CLASSSSSS = " << nodep);
+        addNewUse(nodep, VUseType::INT_FWD_CLASS | VUseType::IMP_INCLUDE, nodep->classp()->name());
     }
     void visit(AstCFunc* nodep) override {
         if (nodep->user1SetOnce()) return;
@@ -72,11 +75,13 @@ class CUseVisitor final : public VNVisitorConst {
         // Add a CUse for every struct that requires a declaration
         AstNodeUOrStructDType* const stypep = VN_CAST(nodep->skipRefp(), NodeUOrStructDType);
         if (stypep && stypep->classOrPackagep()) {
+            UINFO(0, "Type: " << stypep << " Needs full include");
             addNewUse(nodep, VUseType::INT_INCLUDE, stypep->classOrPackagep()->name());
             iterateChildrenConst(stypep);
         } else if (const AstClassRefDType* const classp
                    = VN_CAST(nodep->skipRefp(), ClassRefDType)) {
-            addNewUse(nodep, VUseType::INT_FWD_CLASS, classp->name());
+            UINFO(0, "Type: " << stypep << " Does not need full include");
+            addNewUse(nodep, VUseType::INT_FWD_CLASS | VUseType::IMP_INCLUDE, classp->name());
         }
     }
     void visit(AstNode* nodep) override {
@@ -88,7 +93,8 @@ class CUseVisitor final : public VNVisitorConst {
         if (nodep->user1SetOnce()) return;  // Process once
         if (nodep->modp()->isConstPool()) return;  // Special emit rules
         // Currently no IMP_INCLUDE because we include __Syms which has them all
-        addNewUse(nodep, VUseType::INT_FWD_CLASS, nodep->modp()->name());
+        UINFO(0, "CELL = " << nodep);
+        addNewUse(nodep, VUseType::INT_FWD_CLASS | VUseType::IMP_INCLUDE, nodep->modp()->name());
         iterateChildrenConst(nodep);
     }
 

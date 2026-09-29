@@ -2165,6 +2165,7 @@ public:
         // Enum values are compared with <, so order matters
         INT_FWD_CLASS = 1 << 0,  // Interface (.h) needs a forward class declaration
         INT_INCLUDE = 1 << 1,  // Interface (.h) needs an include
+        IMP_INCLUDE = 1 << 2,  // Interface (.h) needs an include
     };
     enum en m_e;
     VUseType()
@@ -2177,6 +2178,8 @@ public:
     constexpr operator en() const { return m_e; }
     bool containsAny(VUseType other) const { return m_e & other.m_e; }
     const char* ascii() const {
+        // TODO :: Probably needs something else
+        if (m_e == IMP_INCLUDE) return "IMP_INCLUDE";
         static const char* const names[] = {"INT_FWD", "INT_INC", "INT_FWD_INC"};
         return names[m_e - 1];
     }
