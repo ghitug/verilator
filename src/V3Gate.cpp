@@ -31,6 +31,7 @@
 #include "V3Graph.h"
 #include "V3Stats.h"
 
+#include <algorithm>
 #include <list>
 #include <unordered_map>
 #include <unordered_set>
@@ -85,8 +86,8 @@ class GateVarVertex final : public GateEitherVertex {
     AstVarScope* const m_varScp;
     bool m_isTop = false;
     bool m_isClock = false;
-    AstNode* m_rstSyncNodep = nullptr;  // Used as reset and not in SenItem, in clocked always
-    AstNode* m_rstAsyncNodep = nullptr;  // Used as reset and in SenItem, in clocked always
+    std::vector<AstNode*> m_rstSyncNodeps;  // Used as reset and not in SenItem, in clocked always
+    std::vector<AstNode*> m_rstAsyncNodeps;  // Used as reset and in SenItem, in clocked always
 public:
     GateVarVertex(V3Graph* graphp, AstVarScope* varScp)
         : GateEitherVertex{graphp}
@@ -99,10 +100,10 @@ public:
     void setIsTop() { m_isTop = true; }
     bool isClock() const { return m_isClock; }
     void setIsClock() { m_isClock = true; }
-    AstNode* rstSyncNodep() const { return m_rstSyncNodep; }
-    void rstSyncNodep(AstNode* nodep) { m_rstSyncNodep = nodep; }
-    AstNode* rstAsyncNodep() const { return m_rstAsyncNodep; }
-    void rstAsyncNodep(AstNode* nodep) { m_rstAsyncNodep = nodep; }
+    const std::vector<AstNode*>& rstSyncNodeps() const { return m_rstSyncNodeps; }
+    void addRstSyncNodep(AstNode* nodep) { m_rstSyncNodeps.push_back(nodep); }
+    const std::vector<AstNode*>& rstAsyncNodeps() const { return m_rstAsyncNodeps; }
+    void addRstAsyncNodep(AstNode* nodep) { m_rstAsyncNodeps.push_back(nodep); }
 
     // METHODS
     void propagateAttrFrom(GateVarVertex* fromp) {
@@ -296,9 +297,9 @@ class GateBuildVisitor final : public VNVisitorConst {
         } else if (m_inEdgeActive && nodep->access().isReadOnly()) {
             // For SYNCASYNCNET
             if (vscp->user2()) {
-                if (!vVtxp->rstAsyncNodep()) vVtxp->rstAsyncNodep(nodep);
+                vVtxp->addRstAsyncNodep(nodep);
             } else {
-                if (!vVtxp->rstSyncNodep()) vVtxp->rstSyncNodep(nodep);
+                vVtxp->addRstSyncNodep(nodep);
             }
         }
 
@@ -335,28 +336,28 @@ public:
 static void v3GateWarnSyncAsync(GateGraph& graph) {
     // AstVar::user2            -> bool: Warned about SYNCASYNCNET
     const VNUser2InUse user2InUse;
+    // First usage with the warning enabled, ignoring usages where it is disabled
+    const auto firstWarnOnp = [](const std::vector<AstNode*>& nodeps) -> const AstNode* {
+        const auto it = std::find_if(nodeps.begin(), nodeps.end(), [](const AstNode* nodep) {
+            return !nodep->fileline()->warnIsOff(V3ErrorCode::SYNCASYNCNET);
+        });
+        return it == nodeps.end() ? nullptr : *it;
+    };
     for (V3GraphVertex& vtx : graph.vertices()) {
         if (const GateVarVertex* const vvertexp = vtx.cast<GateVarVertex>()) {
             const AstVarScope* const vscp = vvertexp->varScp();
-            const AstNode* const sp = vvertexp->rstSyncNodep();
-            const AstNode* const ap = vvertexp->rstAsyncNodep();
-            if (ap && sp && !vscp->varp()->user2()) {
-                // This is somewhat wrong, as marking one flop as ok for sync
-                // may mean a different flop now fails.  However it's a pain to
-                // then report a warning in a new place - we should report them all at once.
-                // Instead, we will disable if any disabled
-                if (!vscp->fileline()->warnIsOff(V3ErrorCode::SYNCASYNCNET)
-                    && !ap->fileline()->warnIsOff(V3ErrorCode::SYNCASYNCNET)
-                    && !sp->fileline()->warnIsOff(V3ErrorCode::SYNCASYNCNET)) {
-                    vscp->varp()->user2(true);  // Warn only once per signal
-                    vscp->v3warn(SYNCASYNCNET,
-                                 "Signal flopped as both synchronous and async: "
-                                     << vscp->prettyNameQ() << '\n'
-                                     << ap->warnOther() << "... Location of async usage\n"
-                                     << ap->warnContextPrimary() << '\n'
-                                     << sp->warnOther() << "... Location of sync usage\n"
-                                     << sp->warnContextSecondary());
-                }
+            const AstNode* const sp = firstWarnOnp(vvertexp->rstSyncNodeps());
+            const AstNode* const ap = firstWarnOnp(vvertexp->rstAsyncNodeps());
+            if (ap && sp && !vscp->varp()->user2()
+                && !vscp->fileline()->warnIsOff(V3ErrorCode::SYNCASYNCNET)) {
+                vscp->varp()->user2(true);  // Warn only once per signal
+                vscp->v3warn(SYNCASYNCNET, "Signal flopped as both synchronous and async: "
+                                               << vscp->prettyNameQ() << '\n'
+                                               << ap->warnOther()
+                                               << "... Location of async usage\n"
+                                               << ap->warnContextPrimary() << '\n'
+                                               << sp->warnOther() << "... Location of sync usage\n"
+                                               << sp->warnContextSecondary());
             }
         }
     }

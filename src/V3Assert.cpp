@@ -244,6 +244,15 @@ void V3AssertCommon::checkSvaInstanceDelays(AstNode* nodep, AstNode* instp) {
     for (AstDelay* const delayp : delayps) checkSvaCycleDelay(delayp, instp);
 }
 
+void V3AssertCommon::warnOffSyncAsyncNet(AstNode* nodesp) {
+    nodesp->foreachAndNext([](AstNodeVarRef* refp) {
+        // Copy, as the FileLine may be shared with user logic, e.g. by let substitution
+        FileLine* const flp = new FileLine{refp->fileline()};
+        flp->warnOff(V3ErrorCode::SYNCASYNCNET, true);
+        refp->fileline(flp);
+    });
+}
+
 //######################################################################
 // AssertDeFutureVisitor
 // If any AstFuture, then move all non-future varrefs to be one cycle behind,
@@ -856,6 +865,7 @@ class AssertVisitor final : public VNVisitor {
         if (disablep) bodysp = new AstIf{flp, new AstLogNot{flp, disablep}, bodysp};
         // Add assertOn check last, for better combining
         if (!seqEvent) bodysp = newIfAssertOn(bodysp, nodep->directive(), nodep->userType());
+        V3AssertCommon::warnOffSyncAsyncNet(bodysp);
         if (sentreep) bodysp = new AstAlways{flp, VAlwaysKwd::ALWAYS, sentreep, bodysp};
 
         if (passsp && !passsp->backp()) VL_DO_DANGLING(pushDeletep(passsp), passsp);
