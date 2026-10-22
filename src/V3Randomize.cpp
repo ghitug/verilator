@@ -2416,6 +2416,62 @@ class ConstraintExprVisitor final : public VNVisitor {
         // Fall back to "(ite cond then else)"
         visit(static_cast<AstNodeTriop*>(nodep));
     }
+    // IEEE 1800-2023 18.5.13: Subexpressions not depending on random variables are guards,
+    // evaluated before solving. Return a predicate that is true when the guards alone decide
+    // that condp evaluates to 'value', or nullptr if they can never decide it.
+    AstNodeExpr* newGuardDecidesp(AstNodeExpr* condp, bool value) {
+        FileLine* const fl = condp->fileline();
+        if (!condp->user1()) {
+            AstNodeExpr* const guardp = condp->cloneTreePure(false);
+            return value ? guardp : new AstLogNot{fl, guardp};
+        }
+        if (AstLogNot* const notp = VN_CAST(condp, LogNot)) {
+            return newGuardDecidesp(notp->lhsp(), !value);
+        }
+        const bool isAnd = VN_IS(condp, LogAnd);
+        if (!isAnd && !VN_IS(condp, LogOr)) return nullptr;
+        AstNodeBiop* const biopp = VN_AS(condp, NodeBiop);
+        AstNodeExpr* const lhsp = newGuardDecidesp(biopp->lhsp(), value);
+        AstNodeExpr* const rhsp = newGuardDecidesp(biopp->rhsp(), value);
+        if (isAnd != value) {
+            // Either operand decides: '&&' being false, or '||' being true
+            if (!lhsp || !rhsp) return lhsp ? lhsp : rhsp;
+            return new AstLogOr{fl, lhsp, rhsp};
+        }
+        // Both operands must decide: '&&' being true, or '||' being false
+        if (lhsp && rhsp) return new AstLogAnd{fl, lhsp, rhsp};
+        if (lhsp) VL_DO_DANGLING(lhsp->deleteTree(), lhsp);
+        if (rhsp) VL_DO_DANGLING(rhsp->deleteTree(), rhsp);
+        return nullptr;
+    }
+    void visit(AstLogIf* nodep) override {
+        if (editFormat(nodep)) return;
+        // A false guard creates no constraint, so the consequent may reference e.g.
+        // nonexistent array elements: (guardFalse ? "#b1" : "constraint")
+        FileLine* const fl = nodep->fileline();
+        AstNodeExpr* guardFalsep;
+        AstNodeExpr* constrp;
+        if (!nodep->lhsp()->user1()) {
+            // Whole condition is a guard, so only the consequent remains
+            guardFalsep = new AstLogNot{fl, nodep->lhsp()->unlinkFrBack()};
+            constrp = nodep->rhsp()->unlinkFrBack();
+            nodep->replaceWith(constrp);
+            VL_DO_DANGLING(pushDeletep(nodep), nodep);
+            constrp = VN_AS(iterateSubtreeReturnEdits(constrp), NodeExpr);
+        } else {
+            // Random variables remain in the condition, so solve the implication
+            guardFalsep = newGuardDecidesp(nodep->lhsp(), false);
+            constrp = editSMT(nodep, nodep->lhsp(), nodep->rhsp());
+            if (!guardFalsep) return;
+        }
+        UASSERT_OBJ(constrp->isString(), constrp, "Constraint not converted to string");
+        VNRelinker relinker;
+        constrp->unlinkFrBack(&relinker);
+        AstCond* const condp
+            = new AstCond{fl, guardFalsep, new AstSFormatF{fl, "#b1", false, nullptr}, constrp};
+        // Wrap so it is not converted again, like all converted expressions
+        relinker.relink(new AstSFormatF{fl, "%s", false, condp});
+    }
     void visit(AstReplicate* nodep) override {
         // Biop, but RHS is harmful
         if (editFormat(nodep)) return;
@@ -2814,7 +2870,9 @@ class ConstraintExprVisitor final : public VNVisitor {
         } else if (thenp) {
             newp = new AstLogIf{fl, nodep->condp()->unlinkFrBack(), thenp};
         } else if (elsep) {
-            newp = new AstLogIf{fl, new AstNot{fl, nodep->condp()->unlinkFrBack()}, elsep};
+            AstNot* const notp = new AstNot{fl, nodep->condp()->unlinkFrBack()};
+            notp->user1(notp->lhsp()->user1());  // Guard detection in visit(AstLogIf) needs it
+            newp = new AstLogIf{fl, notp, elsep};
         }
         if (newp) {
             newp->dtypeSetBit();  // Result is boolean (prevents bare-var != 0 wrapping)
