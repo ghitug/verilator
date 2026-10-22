@@ -1288,11 +1288,9 @@ class ConstraintExprVisitor final : public VNVisitor {
                               const int width) {
         if (condp) {
             FileLine* const flp = exprp->fileline();
-            AstCond* const condWrapperp = new AstCond{
+            return new AstCond{
                 flp, condp, exprp,
                 getConstFormat(new AstConst{flp, AstConst::WidthedValue{}, width, 0})};
-            condWrapperp->user1(true);
-            return condWrapperp;
         }
         return exprp;
     }
@@ -2618,21 +2616,8 @@ class ConstraintExprVisitor final : public VNVisitor {
             // Index is constant or non-rand -- format as hex literal.
             // Keep a pre-edit clone for the rand_mode hoist below.
             AstNodeExpr* const origp = nodep->cloneTree(false);
-            AstNodeExpr* const bitp = nodep->bitp()->unlinkFrBack(&handle);
-            if (m_structSel) {
-                const AstUnpackArrayDType* const arrDtypep
-                    = VN_AS(nodep->fromp()->dtypep()->skipRefp(), UnpackArrayDType);
-                const uint32_t maxIndex = arrDtypep->elementsConst() - 1;
-                const bool alwaysInRange
-                    = (bitp->width() < 32) && maxIndex >= ((1U << bitp->width()) - 1);
-                if (!alwaysInRange) {
-                    AstNodeExpr* const condp = new AstLte{
-                        fl, bitp->cloneTreePure(false),
-                        new AstConst{fl, AstConst::WidthedValue{}, bitp->width(), maxIndex}};
-                    m_conditionp = m_conditionp ? new AstLogAnd{fl, m_conditionp, condp} : condp;
-                }
-            }
-            AstNodeExpr* const indexp = new AstSFormatF{fl, "#x%8x", false, bitp};
+            AstNodeExpr* const indexp
+                = new AstSFormatF{fl, "#x%8x", false, nodep->bitp()->unlinkFrBack(&handle)};
             handle.relink(indexp);
             AstSFormatF* const newp = editSMT(nodep, nodep->fromp(), indexp);
             renameArrayExpr(newp);
@@ -3099,13 +3084,7 @@ class ConstraintExprVisitor final : public VNVisitor {
                 nodep->exprp(neqp);
             }
         }
-        {
-            VL_RESTORER(m_conditionp);
-            m_conditionp = nullptr;
-            const int32_t exprWidth = nodep->exprp()->width();
-            iterateChildren(nodep);
-            nodep->exprp(wrapWithCond(nodep->exprp()->unlinkFrBack(), m_conditionp, exprWidth));
-        }
+        iterateChildren(nodep);
         if (m_wantSingle) {
             nodep->replaceWith(nodep->exprp()->unlinkFrBack());
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
@@ -3382,7 +3361,7 @@ class ConstraintExprVisitor final : public VNVisitor {
                 const int resultWidth = nodep->dtypep()->width();
                 const VSigning resultSigning = nodep->dtypep()->numeric();
 
-                AstNodeExpr* perElemExprp = VN_AS(withp->exprp()->cloneTreePure(false), NodeExpr);
+                AstNode* perElemExprp = withp->exprp()->cloneTreePure(false);
                 if (AstLambdaArgRef* const rootRefp = VN_CAST(perElemExprp, LambdaArgRef)) {
                     if (rootRefp->index()) {
                         // item.index at root -> replace with loop variable, adjust width
@@ -3426,12 +3405,7 @@ class ConstraintExprVisitor final : public VNVisitor {
 
                 cstmtp->add("ret = \"(" + std::string(smtOp) + " \" + ret + \" \";\n");
                 cstmtp->add("ret += ");
-                const int32_t elemWidth = perElemExprp->width();
-                VL_RESTORER(m_conditionp);
-                m_conditionp = nullptr;
-                AstNodeExpr* const elemExprp
-                    = VN_AS(iterateSubtreeReturnEdits(perElemExprp), NodeExpr);
-                cstmtp->add(wrapWithCond(elemExprp, m_conditionp, elemWidth));
+                cstmtp->add(iterateSubtreeReturnEdits(perElemExprp));
                 cstmtp->add(";\n");
                 cstmtp->add("ret += \")\";\n");
             } else {
