@@ -1366,9 +1366,14 @@ class WidthVisitor final : public VNVisitor {
         // Signed/Real: Output signed iff LHS signed/real; binary operator
         // Note by contrast, bit extract selects are unsigned
         // LSB is self-determined (IEEE 2012 11.5.1)
+        if (nodep->didWidth()) return;
         assertAtExpr(nodep);
         if (m_vup->prelim()) {
+            // AstSelBit visits its replacement twice; second visit would range check
+            // the index after it was truncated below
+            nodep->didWidth(true);
             iterateCheckSizedSelf(nodep, "Bit select", nodep->bitp(), SELF, BOTH);
+            V3Const::constifyEdit(nodep->bitp());  // So out of range check sees a constant
             userIterateAndNext(nodep->fromp(), WidthVP{SELF, BOTH}.p());
             // Element of a whole array of interfaces
             if (VN_IS(nodep->fromp(), ConsArray) && isIfaceArrayDType(nodep->fromp()->dtypep())) {
@@ -1428,15 +1433,15 @@ class WidthVisitor final : public VNVisitor {
             if (!m_doGenerate) {
                 // Must check bounds before adding a select that truncates the bound
                 // Note we've already subtracted off LSB
-                if (VN_IS(nodep->bitp(), Const)
-                    && (VN_AS(nodep->bitp(), Const)->toSInt() > (frommsb - fromlsb)
-                        || VN_AS(nodep->bitp(), Const)->toSInt() < 0)) {
+                // Cannot range check an X/Z index
+                const AstConst* const bitConstp = VN_CAST(nodep->bitp(), Const);
+                if (bitConstp && !bitConstp->num().isFourState()
+                    && (bitConstp->toSInt() > (frommsb - fromlsb) || bitConstp->toSInt() < 0)) {
                     // Suppress in dead/parameterized template modules
                     if (!(m_modep && (m_modep->dead() || m_modep->parameterizedTemplate()))) {
-                        nodep->v3warn(SELRANGE,
-                                      "Selection index out of range: "
-                                          << (VN_AS(nodep->bitp(), Const)->toSInt() + fromlsb)
-                                          << " outside " << frommsb << ":" << fromlsb);
+                        nodep->v3warn(SELRANGE, "Selection index out of range: "
+                                                    << (bitConstp->toSInt() + fromlsb)
+                                                    << " outside " << frommsb << ":" << fromlsb);
                     }
                 }
                 widthCheckSized(nodep, "Extract Range", nodep->bitp(), selwidthDTypep, EXTEND_EXP,

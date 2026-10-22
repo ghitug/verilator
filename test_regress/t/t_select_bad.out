@@ -1,0 +1,21 @@
+%Warning-SELRANGE: t/t_select_bad.v:16:14: Selection index out of range: -1 outside 6:0
+                                         : ... note: In instance 't'
+   16 |     l1 = arr1[-1];   
+      |              ^
+                   ... For warning description see https://verilator.org/warn/SELRANGE?v=latest
+                   ... Use "/* verilator lint_off SELRANGE */" and lint_on around source to disable this message.
+%Warning-SELRANGE: t/t_select_bad.v:17:14: Selection index out of range: -3 outside 4:-2
+                                         : ... note: In instance 't'
+   17 |     l1 = arr2[-3];   
+      |              ^
+%Warning-SELRANGE: t/t_select_bad.v:18:14: Selection index out of range: -1 outside 4:0
+                                         : ... note: In instance 't'
+   18 |     b4 = arr3[-1];   
+      |              ^
+%Warning-WIDTHEXPAND: t/t_select_bad.v:19:14: Bit extraction of array[6:0] requires 3 bit index, not 1 bits.
+                                            : ... note: In instance 't'
+   19 |     l1 = arr1[(1'h0/1'b0)];   
+      |              ^
+                      ... For warning description see https://verilator.org/warn/WIDTHEXPAND?v=latest
+                      ... Use "/* verilator lint_off WIDTHEXPAND */" and lint_on around source to disable this message.
+%Error: Exiting due to
