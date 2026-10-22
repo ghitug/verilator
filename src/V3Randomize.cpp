@@ -2416,6 +2416,24 @@ class ConstraintExprVisitor final : public VNVisitor {
         // Fall back to "(ite cond then else)"
         visit(static_cast<AstNodeTriop*>(nodep));
     }
+    void visit(AstLogIf* nodep) override {
+        if (editFormat(nodep)) return;
+        if (!nodep->lhsp()->user1()) {
+            // IEEE 1800-2023 18.5.13: A condition not depending on random variables is a
+            // constraint guard, evaluated before solving. When false, no constraint is
+            // created, so the consequent may reference e.g. nonexistent array elements.
+            FileLine* const fl = nodep->fileline();
+            AstCond* const newp
+                = new AstCond{fl, nodep->lhsp()->unlinkFrBack(), nodep->rhsp()->unlinkFrBack(),
+                              new AstSFormatF{fl, "#b1", false, nullptr}};
+            newp->user1(true);
+            nodep->replaceWith(newp);
+            VL_DO_DANGLING(pushDeletep(nodep), nodep);
+            visit(newp);
+            return;
+        }
+        visit(static_cast<AstNodeBiop*>(nodep));
+    }
     void visit(AstReplicate* nodep) override {
         // Biop, but RHS is harmful
         if (editFormat(nodep)) return;
