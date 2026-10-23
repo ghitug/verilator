@@ -400,6 +400,13 @@ public:
     // VISITORS
     using EmitCConstInit::visit;
     void visit(AstCFunc* const nodep) override {
+        // The C++ default constructor is declared with 'new' (see emitCDefaultConstructor),
+        // so define it next to it, even if 'new' itself is defined inline
+        if (nodep->isConstructor() && !VN_AS(m_modp, Class)->isInterfaceClass()) {
+            const std::string className = EmitCUtil::prefixNameProtect(m_modp);
+            puts("\n");
+            putns(nodep, className + "::" + className + "() = default;\n");
+        }
         if (nodep->emptyBody() && !nodep->isLoose() && !nodep->isDestructor()) return;
         VL_RESTORER(m_useSelfForThis);
         VL_RESTORER(m_cfuncp);

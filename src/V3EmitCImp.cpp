@@ -98,12 +98,6 @@ class EmitCImp final : public EmitCFunc {
         }
         if (!first) puts("\n");
     }
-    void emitClassCtorImp(const AstClass* classp) {
-        if (classp->isInterfaceClass()) return;
-        const std::string className = EmitCUtil::prefixNameProtect(classp);
-        puts("\n");
-        putns(classp, className + "::" + className + "() = default;\n");
-    }
     // Add statements explicitly constructing, or destroying, a member AstVar
     static void addVarCtorDtorStmts(TextStmts& stmts, const AstVar* varp, bool destroy) {
         const std::string name = "vlSelf->" + varName(varp);
@@ -417,14 +411,8 @@ class EmitCImp final : public EmitCFunc {
     // Predicate to check if we actually need to emit anything into the common implementation file.
     // Used to avoid creating empty output files.
     bool hasCommonImp(const AstNodeModule* modp) const {
-        if (const AstClass* const classp = VN_CAST(modp, Class)) {
-            if (m_slow) return false;
-            return !classp->isInterfaceClass()
-                   || classp->hasAnyScSection(
-                       {VSystemCSectionType::IMP, VSystemCSectionType::IMP_HDR});
-        }
-        // We always need the slow file
-        if (m_slow) return true;
+        // We always need the slow file, except for classes, which have no slow common parts
+        if (m_slow) return !VN_IS(modp, Class);
         // The fast file is only required when we have `systemc_implementation nodes
         return modp->hasAnyScSection({VSystemCSectionType::IMP});
     }
@@ -439,7 +427,6 @@ class EmitCImp final : public EmitCFunc {
             }
             emitSavableImp(modp);
         } else {
-            if (const AstClass* const classp = VN_CAST(modp, Class)) emitClassCtorImp(classp);
             // From `systemc_implementation
             emitSystemCSection(modp, VSystemCSectionType::IMP);
         }
