@@ -411,7 +411,7 @@ class EmitCImp final : public EmitCFunc {
     // Predicate to check if we actually need to emit anything into the common implementation file.
     // Used to avoid creating empty output files.
     bool hasCommonImp(const AstNodeModule* modp) const {
-        // We always need the slow file, except for classes, which have no slow common parts
+        // We always need the slow file, except for classes
         if (m_slow) return !VN_IS(modp, Class);
         // The fast file is only required when we have `systemc_implementation nodes
         return modp->hasAnyScSection({VSystemCSectionType::IMP});

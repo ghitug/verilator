@@ -176,8 +176,7 @@ void EmitCBaseVisitorConst::emitCFuncDecl(const AstCFunc* funcp, const AstNodeMo
     emitCFuncHeader(funcp, modp, /* withScope: */ false);
     const AstClass* const classp = VN_CAST(modp, Class);
     if (funcp->emptyBody() && !funcp->isLoose() && !cLinkage
-        && !(funcp->isConstructor() && classp && classp->isInterfaceClass())
-        && !funcp->isDestructor()) {
+        && !(funcp->isConstructor() && classp && classp->isInterfaceClass())) {
         putns(funcp, " {}\n");
     } else {
         putns(funcp, ";\n");

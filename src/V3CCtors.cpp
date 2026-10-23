@@ -227,6 +227,9 @@ class CCtorsVisitor final : public VNVisitor {
             AstCFunc* const funcp = new AstCFunc{classp->fileline(), "~", nullptr, ""};
             funcp->isDestructor(true);
             funcp->isStatic(false);
+            // Destroying members may need complete types of classes they refer to, which the
+            // header only forward declares
+            funcp->keepIfEmpty(true);
             // If can be referred to by base pointer, need virtual delete
             funcp->isVirtual(classp->isExtended());
             funcp->slow(false);
