@@ -136,7 +136,6 @@ public:
         VDouble0 fwdDeclarations;
         VDouble0 intIncludes;
         VDouble0 implIncludes;
-        bool hdrFwdOnly = false;  // Header only forward declares some other class
         for (const auto& used : m_didUse) {
             AstCUse* const newp = new AstCUse{used.second.first, used.second.second, used.first};
             m_modp->addStmtsp(newp);
@@ -144,19 +143,6 @@ public:
             if (newp->useType().containsAny(VUseType::INT_FWD_CLASS)) ++fwdDeclarations;
             if (newp->useType().containsAny(VUseType::INT_INCLUDE)) ++intIncludes;
             if (newp->useType().containsAny(VUseType::IMP_INCLUDE)) ++implIncludes;
-            if (newp->useType().containsAny(VUseType::INT_FWD_CLASS)
-                && !newp->useType().containsAny(VUseType::INT_INCLUDE)
-                && used.first != m_modp->name()) {
-                hdrFwdOnly = true;
-            }
-        }
-        // Destroying members may need complete types of classes the header only forward
-        // declares, so then the destructor cannot be defined inline in the header
-        if (hdrFwdOnly) {
-            for (AstNode* itemp = m_modp->stmtsp(); itemp; itemp = itemp->nextp()) {
-                AstCFunc* const cfuncp = VN_CAST(itemp, CFunc);
-                if (cfuncp && cfuncp->isDestructor()) cfuncp->keepIfEmpty(true);
-            }
         }
 
         V3Stats::addStatSum("CUse, Interface class forward declarations", fwdDeclarations);
