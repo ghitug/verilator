@@ -130,6 +130,10 @@ public:
         : m_modp{modp} {
         iterateConst(modp);
         if (AstClass* const classp = VN_CAST(modp, Class)) {
+            // 'clone' copies all members, including inherited ones, so the implementation needs
+            // their types
+            VL_RESTORER(m_impOnly);
+            m_impOnly = true;
             classp->foreachMember([&](AstClass*, AstVar* varp) { iterateConst(varp->dtypep()); });
         }
 

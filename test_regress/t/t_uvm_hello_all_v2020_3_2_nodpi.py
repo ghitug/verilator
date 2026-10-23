@@ -31,7 +31,7 @@ test.execute(all_run_flags=['' if test.verbose else '+UVM_NO_RELNOTES'])
 test.file_grep(test.run_log_filename, r'UVM TEST PASSED')
 
 test.file_grep(test.stats, r'CUse, Implementation includes\s+(\d+)', 6044)
-test.file_grep(test.stats, r'CUse, Interface class forward declarations\s+(\d+)', 4051)
+test.file_grep(test.stats, r'CUse, Interface class forward declarations\s+(\d+)', 3190)
 test.file_grep(test.stats, r'CUse, Interface includes\s+(\d+)', 543)
 
 test.passes()
