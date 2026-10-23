@@ -263,7 +263,13 @@ public:
         for (const AstNode* itemp = modp->stmtsp(); itemp; itemp = itemp->nextp()) {
             if (const AstCUse* const usep = VN_CAST(itemp, CUse)) {
                 if (usep->useType().containsAny(useType)) {
-                    if (usep->useType().containsAny(VUseType::INT_INCLUDE)) {
+                    const bool headerRequiresFullType
+                        = usep->useType().containsAny(VUseType::INT_INCLUDE);
+                    const bool implRequestedFullType
+                        = usep->useType().containsAny(VUseType::IMP_INCLUDE)
+                          && useType.containsAny(VUseType::IMP_INCLUDE);
+                    if (headerRequiresFullType && implRequestedFullType) continue;
+                    if (headerRequiresFullType || implRequestedFullType) {
                         action("#include \"" + EmitCUtil::prefixNameProtect(usep) + ".h\"\n");
                         continue;  // Forward declaration is not necessary
                     }

@@ -34,17 +34,24 @@ VL_DEFINE_DEBUG_FUNCTIONS;
 
 class EmitCImp final : public EmitCFunc {
     // MEMBERS
-    // Base module (For non-classes, same as m_modp. For classes, it's the ClassPackage.)
-    const AstNodeModule* const m_fileModp;
     const bool m_slow;  // Creating __Slow file
+    const bool m_userCpp;  // Has user c++ that may reference any class
     V3UniqueNames m_uniqueNames;  // Generates unique file names
-    const std::string m_fileBaseName = EmitCUtil::prefixNameProtect(m_fileModp);
+    const std::string m_fileBaseName;
     TextStmts m_ctorStmts;  // Statements constructing members in 'ctor'
     TextStmts m_dtorStmts;  // Statements destroying members in 'dtor'
     std::string m_ctorSplitDecl;  // Declaration of sub-function 'ctor' was split into, if any
     std::string m_dtorSplitDecl;  // Declaration of sub-function 'dtor' was split into, if any
 
     // METHODS
+    static bool hasUserCpp(const AstNodeModule* const modp) {
+        return modp->hasAnyScSection({VSystemCSectionType::IMP, VSystemCSectionType::IMP_HDR})
+               || modp->exists([](const AstNode* nodep) {
+                      if (const AstCStmtUser* const userStmtp = VN_CAST(nodep, CStmtUser))
+                          return userStmtp->fromDollarC();
+                      return VN_IS(nodep, CExprUser);
+                  });
+    }
     void openNextOutputFile(const std::string& fileName) {
         openNewOutputSourceFile(fileName, m_slow, false, "Design implementation internals");
         emitFileHeader();
@@ -53,7 +60,20 @@ class EmitCImp final : public EmitCFunc {
         puts("// See " + EmitCUtil::topClassName() + ".h for the primary calling header\n");
         puts("\n");
         puts("#include \"" + EmitCUtil::pchClassName() + ".h\"\n");
-        emitSystemCSection(m_fileModp, VSystemCSectionType::IMP_HDR);
+        if (VN_IS(m_modp, Class)) {
+            puts("#include \"" + EmitCUtil::prefixNameProtect(m_modp) + ".h\"\n");
+        }
+        emitModCUse(m_modp, VUseType::IMP_INCLUDE);
+        if (m_userCpp) {
+            for (const AstNode* nodep = v3Global.rootp()->modulesp(); nodep;
+                 nodep = nodep->nextp()) {
+                if (nodep == m_modp) continue;
+                if (const AstClass* const classp = VN_CAST(nodep, Class)) {
+                    puts("#include \"" + EmitCUtil::prefixNameProtect(classp) + ".h\"\n");
+                }
+            }
+        }
+        emitSystemCSection(m_modp, VSystemCSectionType::IMP_HDR);
         // Need to emit new lazy declarations
         m_lazyDecls.reset();
     }
@@ -77,6 +97,12 @@ class EmitCImp final : public EmitCFunc {
             }
         }
         if (!first) puts("\n");
+    }
+    void emitClassCtorImp(const AstClass* classp) {
+        if (classp->isInterfaceClass()) return;
+        const std::string className = EmitCUtil::prefixNameProtect(classp);
+        puts("\n");
+        putns(classp, className + "::" + className + "() = default;\n");
     }
     // Add statements explicitly constructing, or destroying, a member AstVar
     static void addVarCtorDtorStmts(TextStmts& stmts, const AstVar* varp, bool destroy) {
@@ -391,16 +417,16 @@ class EmitCImp final : public EmitCFunc {
     // Predicate to check if we actually need to emit anything into the common implementation file.
     // Used to avoid creating empty output files.
     bool hasCommonImp(const AstNodeModule* modp) const {
-        // Nothing to emit if no module!
-        if (!modp) return false;
+        if (const AstClass* const classp = VN_CAST(modp, Class)) {
+            if (m_slow) return false;
+            return !classp->isInterfaceClass()
+                   || classp->hasAnyScSection(
+                       {VSystemCSectionType::IMP, VSystemCSectionType::IMP_HDR});
+        }
         // We always need the slow file
         if (m_slow) return true;
         // The fast file is only required when we have `systemc_implementation nodes
-        for (const AstSystemCSection* scSectionp = modp->scSectionsp(); scSectionp;
-             scSectionp = VN_AS(scSectionp->nextp(), SystemCSection)) {
-            if (scSectionp->sectionType() == VSystemCSectionType::IMP) return true;
-        }
-        return false;
+        return modp->hasAnyScSection({VSystemCSectionType::IMP});
     }
     // Actually emit common implementation contents for given AstNodeModule
     void doCommonImp(const AstNodeModule* modp) {
@@ -413,28 +439,18 @@ class EmitCImp final : public EmitCFunc {
             }
             emitSavableImp(modp);
         } else {
+            if (const AstClass* const classp = VN_CAST(modp, Class)) emitClassCtorImp(classp);
             // From `systemc_implementation
             emitSystemCSection(modp, VSystemCSectionType::IMP);
         }
     }
     void emitCommonImp(const AstNodeModule* modp) {
-        const AstClass* const classp
-            = VN_IS(modp, ClassPackage) ? VN_AS(modp, ClassPackage)->classp() : nullptr;
-
-        if (hasCommonImp(modp) || hasCommonImp(classp)) {
+        if (hasCommonImp(modp)) {
             // Create ctor/dtor statements. If these need splitting, they will be emitted
             // during construction so do this before opening the output file.
             if (m_slow && !VN_IS(modp, Class)) createCtorDtorStmts(modp);
-
             openNextOutputFile(m_fileBaseName);
-
             doCommonImp(modp);
-            if (classp) {
-                VL_RESTORER(m_modp);
-                m_modp = classp;
-                doCommonImp(classp);
-            }
-
             closeOutputFile();
         }
     }
@@ -457,10 +473,7 @@ class EmitCImp final : public EmitCFunc {
 
         gather(modp);
         VL_RESTORER(m_classOrPackage);
-        if (const AstClassPackage* const packagep = VN_CAST(modp, ClassPackage)) {
-            m_classOrPackage = packagep;
-            gather(packagep->classp());
-        }
+        if (VN_IS(modp, ClassPackage) || VN_IS(modp, Class)) m_classOrPackage = modp;
 
         // Do not create empty files
         if (funcps.empty()) return;
@@ -492,16 +505,12 @@ class EmitCImp final : public EmitCFunc {
     }
 
     explicit EmitCImp(const AstNodeModule* modp, bool slow)
-        : m_fileModp{modp}
-        , m_slow{slow} {
+        : m_slow{slow}
+        , m_userCpp{hasUserCpp(modp)}
+        , m_fileBaseName{EmitCUtil::prefixNameProtect(modp)} {
         UINFO(5, "  Emitting implementation of " << EmitCUtil::prefixNameProtect(modp));
 
         m_modp = modp;
-
-        // Emit implementation of this module, if this is an AstClassPackage, then put the
-        // corresponding AstClass implementation in the same file as often optimizations are
-        // possible when both are seen by the compiler
-        // TODO: is the above comment still true?
 
         // Emit implementations of common parts
         emitCommonImp(modp);
@@ -968,7 +977,6 @@ void V3EmitC::emitcImp() {
 
         // Process each module in turn
         for (const AstNode* nodep = v3Global.rootp()->modulesp(); nodep; nodep = nodep->nextp()) {
-            if (VN_IS(nodep, Class)) continue;  // Imped with ClassPackage
             const AstNodeModule* const modp = VN_AS(nodep, NodeModule);
             if (modp->isConstPool()) continue;  // Emitted by V3EmitCConstPool
             cfiles.emplace_back();
