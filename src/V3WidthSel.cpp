@@ -230,7 +230,10 @@ class WidthSelVisitor final : public VNVisitor {
         UINFO(6, "  ddtypep " << ddtypep);
         if (const AstUnpackArrayDType* const adtypep = VN_CAST(ddtypep, UnpackArrayDType)) {
             // SELBIT(array, index) -> ARRAYSEL(array, index)
-            AstNodeExpr* subp = rhsp;
+            // Fold a constant index expression (e.g. '-1') so V3Width can check its bounds
+            // widthParamsEdit as constifyEdit doesn't ensure widths finished
+            AstNodeExpr* subp
+                = V3Const::constifyEdit(VN_AS(V3Width::widthParamsEdit(rhsp), NodeExpr));
             if (fromRange.lo() != 0 || fromRange.hi() < 0) {
                 subp = newSubNeg(subp, fromRange.lo());
             }

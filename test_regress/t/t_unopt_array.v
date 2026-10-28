@@ -85,10 +85,13 @@ module Test (  /*AUTOARG*/
 
   generate
     for (g = 0; g < 4; g++) begin
+      // stage[g-1] is out of range for g == 0, but that branch is never taken
+      // verilator lint_off SELRANGE
       always_comb begin
         if (g == 0) stage[g] = {4{in}};
         else stage[g] = {4{stage[g-1][0][30:0], 1'b1}};
       end
+      // verilator lint_on SELRANGE
     end
   endgenerate
 
