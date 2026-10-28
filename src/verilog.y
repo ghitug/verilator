@@ -6683,10 +6683,14 @@ sequence_formal_typeNoDt<nodeDTypep>:  // ==IEEE: sequence_formal_type (w/o data
         ;
 
 sequence_declarationBody<nodep>:  // IEEE: part of sequence_declaration
+                assertion_variable_declarationList sequence_declarationExpr
+                        { $$ = addNextNull($1, $2); }
+        |       sequence_declarationExpr                { $$ = $1; }
+        ;
+
+sequence_declarationExpr<nodeExprp>:  // IEEE: part of sequence_declaration
         //                      // 1800-2012 makes ';' optional
-                assertion_variable_declarationList sexpr        { $$ = addNextNull($1, $2); }
-        |       assertion_variable_declarationList sexpr ';'    { $$ = addNextNull($1, $2); }
-        |       sexpr                                   { $$ = $1; }
+                sexpr                                   { $$ = $1; }
         |       sexpr ';'                               { $$ = $1; }
         //                      // IEEE: clocking_event sequence_expr (16.7)
         //                      // A leading clocking event on a named sequence body.

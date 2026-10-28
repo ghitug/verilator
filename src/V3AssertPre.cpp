@@ -285,9 +285,12 @@ private:
         return newp;
     }
     AstNodeExpr* getSequenceBodyExprp(const AstSequence* const seqp) const {
-        // The statements in AstSequence are optional AstVar (ports) followed by body expr.
+        // The statements in AstSequence are optional AstVar (ports/local vars),
+        // AstInitialStaticStmt (local var init), followed by body expr.
         AstNode* bodyp = seqp->stmtsp();
-        while (bodyp && VN_IS(bodyp, Var)) bodyp = bodyp->nextp();
+        while (bodyp && (VN_IS(bodyp, Var) || VN_IS(bodyp, InitialStaticStmt))) {
+            bodyp = bodyp->nextp();
+        }
         return VN_CAST(bodyp, NodeExpr);
     }
     AstPropSpec* getPropertyExprp(const AstProperty* const propp) {

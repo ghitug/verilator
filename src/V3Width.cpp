@@ -8047,7 +8047,8 @@ class WidthVisitor final : public VNVisitor {
         if (nodep->didWidth()) return;
         nodep->dtypeSetBit();
         for (AstNode* stmtp = nodep->stmtsp(); stmtp; stmtp = stmtp->nextp()) {
-            if (VN_IS(stmtp, Var)) {
+            if (VN_IS(stmtp, Var) || VN_IS(stmtp, InitialStaticStmt)) {
+                // Sequence-local variable and its initialization
                 userIterate(stmtp, nullptr);
             } else if (VN_IS(stmtp, NodeExpr)) {
                 iterateCheckSelf(nodep, "SeqBody", stmtp, SELF, BOTH);

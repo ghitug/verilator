@@ -54,6 +54,15 @@ module t (
   endproperty
   assert property (p_nested_in_body);
 
+  // A range delay in an antecedent capturing a local variable is unsupported.
+  property p_antecedent_range;
+    int snap;
+    @(posedge clk) (valid,
+    snap = cyc
+    ) ##[1:2] valid |-> (cyc > snap);
+  endproperty
+  assert property (p_antecedent_range);
+
   always @(posedge clk) begin
     cyc <= cyc + 1;
     valid <= (cyc == 2);
