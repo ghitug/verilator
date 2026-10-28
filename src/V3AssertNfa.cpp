@@ -2919,6 +2919,7 @@ class AssertNfaVisitor final : public VNVisitor {
     V3UniqueNames m_propVarNames{"__Vpropvar"};  // Property-local variable names
     V3UniqueNames m_propTempNames{"__VnfaSampled"};  // Hoisted $sampled(propp) temps
     V3UniqueNames m_failCountNames{"__VnfaRemainingFailCount"};  // Fail replay counter names
+    V3UniqueNames m_actionBlockNames{"__VnfaAction"};  // Cloned action block names
     std::set<const AstProperty*> m_inliningProps;  // Recursion guard for inlineNamedProperty
 
     template <typename T_Node>
@@ -3154,8 +3155,18 @@ class AssertNfaVisitor final : public VNVisitor {
         return !hasMultiCycleExpr(parts.triggerExprp);
     }
 
-    static void splitImplicationPassActions(AstAssert* assertp, const PropertyParts& parts,
-                                            AstNodeExpr* nonvacuousMatchp) {
+    // Clone an action block. Named blocks in the copy are renamed, otherwise
+    // V3Begin flattens the declarations of both copies to the same names.
+    AstNode* cloneActionBlock(AstNode* nodep, bool cloneNextLink) {
+        AstNode* const clonep = nodep->cloneTree(cloneNextLink);
+        clonep->foreachAndNext([&](AstNodeBlock* blockp) {
+            if (!blockp->name().empty()) blockp->name(m_actionBlockNames.get(blockp->name()));
+        });
+        return clonep;
+    }
+
+    void splitImplicationPassActions(AstAssert* assertp, const PropertyParts& parts,
+                                     AstNodeExpr* nonvacuousMatchp) {
         FileLine* const flp = assertp->fileline();
 
         AstNode* const passsp = assertp->passsp()->unlinkFrBackWithNext();
@@ -3164,7 +3175,7 @@ class AssertNfaVisitor final : public VNVisitor {
         if (!parts.isFollowedBy) {
             AstNodeExpr* const vacuousp
                 = new AstLogNot{flp, sampled(parts.triggerExprp->cloneTreePure(false))};
-            AstNode* const vacuousBodyp = passsp->cloneTree(false);
+            AstNode* const vacuousBodyp = cloneActionBlock(passsp, false);
             splitsp = newPassOnIf(flp, vacuousp, vacuousBodyp, assertp->userType(),
                                   assertp->directive(), /*vacuous=*/true);
         }
@@ -3254,7 +3265,7 @@ class AssertNfaVisitor final : public VNVisitor {
             assertp->addPasssp(ifp);
             // Fail-handler prefix for overlapping instances (IEEE 16.12):
             // fires when reject=1 && match=1 in the same cycle.
-            if (assertp->failsp()) assertp->prependFailsp(ifp->cloneTree(false));
+            if (assertp->failsp()) assertp->prependFailsp(cloneActionBlock(ifp, false));
         }
 
         if (threadFailCountp) {
@@ -3276,8 +3287,8 @@ class AssertNfaVisitor final : public VNVisitor {
                 flp, replayLoopp,
                 new AstGt{flp, new AstVarRef{flp, remainingFailCountVarp, VAccess::READ},
                           newTypedConstp(flp, remainingFailCountVarp->dtypep(), 1)}});
-            replayLoopp->addStmtsp(newIfAssertFailOn(failsp->cloneTree(true), assertp->directive(),
-                                                     assertp->userType()));
+            replayLoopp->addStmtsp(newIfAssertFailOn(cloneActionBlock(failsp, true),
+                                                     assertp->directive(), assertp->userType()));
             AstSub* const decrementedFailCountp
                 = new AstSub{flp, new AstVarRef{flp, remainingFailCountVarp, VAccess::READ},
                              newTypedConstp(flp, remainingFailCountVarp->dtypep(), 1)};
