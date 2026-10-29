@@ -35,9 +35,10 @@ VL_DEFINE_DEBUG_FUNCTIONS;
 class EmitCImp final : public EmitCFunc {
     // MEMBERS
     const bool m_slow;  // Creating __Slow file
-    // Has `systemc_imp_header, which is in every file and may reference any class
+    // Module has `systemc_imp_header, which is in every .cpp file and may reference any class
     const bool m_userImpHdr;
-    bool m_userCppFile = false;  // Current file has user C++ that may reference any class
+    // File contains a function with user c++ that may reference any class
+    bool m_userCppFile = false;
     V3UniqueNames m_uniqueNames;  // Generates unique file names
     const std::string m_fileBaseName;  // Base name of the output files
     TextStmts m_ctorStmts;  // Statements constructing members in 'ctor'
@@ -46,10 +47,16 @@ class EmitCImp final : public EmitCFunc {
     std::string m_dtorSplitDecl;  // Declaration of sub-function 'dtor' was split into, if any
 
     // METHODS
-    static bool hasUserCpp(const AstCFunc* const funcp) {
-        // From $c, or from `systemc_ctor/`systemc_dtor of a class
-        return funcp->exists([](const AstNode* const nodep) {
-            return VN_IS(nodep, CStmtUser) || VN_IS(nodep, CExprUser);
+    static bool hasUserCpp(const AstNodeModule* const modp, const AstCFunc* const funcp) {
+        // `systemc_ctor/`systemc_dtor of a class are inserted into its constructor/destructor
+        if (funcp->isConstructor() && modp->hasAnyScSection({VSystemCSectionType::CTOR}))
+            return true;
+        if (funcp->isDestructor() && modp->hasAnyScSection({VSystemCSectionType::DTOR}))
+            return true;
+        return funcp->exists([](const AstNode* nodep) {
+            if (const AstCStmtUser* const userStmtp = VN_CAST(nodep, CStmtUser))
+                return userStmtp->fromDollarC();
+            return VN_IS(nodep, CExprUser);
         });
     }
     void openNextOutputFile(const std::string& fileName) {
@@ -428,6 +435,7 @@ class EmitCImp final : public EmitCFunc {
             // during construction so do this before opening the output file.
             if (m_slow && !VN_IS(modp, Class)) createCtorDtorStmts(modp);
             // `systemc_implementation/`systemc_ctor/`systemc_dtor are emitted here
+            VL_RESTORER(m_userCppFile);
             m_userCppFile = modp->hasAnyScSection(
                 {VSystemCSectionType::IMP, VSystemCSectionType::CTOR, VSystemCSectionType::DTOR});
             openNextOutputFile(m_fileBaseName);
@@ -435,11 +443,12 @@ class EmitCImp final : public EmitCFunc {
             closeOutputFile();
         }
     }
+
     void emitCFuncFiles(const std::vector<AstCFunc*>& funcps, bool userCpp) {
         // Do not create empty files
         if (funcps.empty()) return;
-
         // Open output file
+        VL_RESTORER(m_userCppFile);
         m_userCppFile = userCpp;
         openNextOutputFile(m_uniqueNames.get(m_fileBaseName));
         // Emit all functions
@@ -452,34 +461,35 @@ class EmitCImp final : public EmitCFunc {
         closeOutputFile();
     }
     void emitCFuncImp(const AstNodeModule* modp) {
-        // Functions to be emitted here. User C++ may reference any class, so functions containing
-        // it go to separate files, keeping the includes of the other files minimal.
+        // Functions to be emitted here
         std::vector<AstCFunc*> funcps;
         std::vector<AstCFunc*> userCppFuncps;
 
-        for (AstNode* const nodep : modp->stmtspList()) {
-            AstCFunc* const funcp = VN_CAST(nodep, CFunc);
-            if (!funcp) continue;
-            // TRACE_* and DPI handled elsewhere
-            if (funcp->isTrace()) continue;
-            if (funcp->dpiImportPrototype()) continue;
-            if (funcp->dpiExportDispatcher()) continue;
-            if (funcp->slow() != m_slow) continue;
-            (hasUserCpp(funcp) ? userCppFuncps : funcps).push_back(funcp);
-        }
+        const auto gather = [this, &funcps, &userCppFuncps](const AstNodeModule* modp) {
+            for (AstNode* const nodep : modp->stmtspList()) {
+                AstCFunc* const funcp = VN_CAST(nodep, CFunc);
+                if (!funcp) continue;
+                // TRACE_* and DPI handled elsewhere
+                if (funcp->isTrace()) continue;
+                if (funcp->dpiImportPrototype()) continue;
+                if (funcp->dpiExportDispatcher()) continue;
+                if (funcp->slow() != m_slow) continue;
+                if (hasUserCpp(modp, funcp)) {
+                    userCppFuncps.push_back(funcp);
+                } else {
+                    funcps.push_back(funcp);
+                }
+            }
+        };
 
+        gather(modp);
         VL_RESTORER(m_classOrPackage);
         if (VN_IS(modp, ClassPackage) || VN_IS(modp, Class)) m_classOrPackage = modp;
 
-        if (v3Global.opt.outputSplit()) {
-            emitCFuncFiles(funcps, false);
-            emitCFuncFiles(userCppFuncps, true);
-        } else {
-            // Splitting disabled, so keep a single file
-            const bool userCpp = !userCppFuncps.empty();
-            funcps.insert(funcps.end(), userCppFuncps.begin(), userCppFuncps.end());
-            emitCFuncFiles(funcps, userCpp);
-        }
+        emitCFuncFiles(funcps, false);
+        // Functions that contain user c++ need to include every class; we create separate files,
+        // so that not every implementation file includes every class
+        emitCFuncFiles(userCppFuncps, true);
     }
 
     // VISITORS
