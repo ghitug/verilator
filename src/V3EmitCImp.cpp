@@ -52,8 +52,7 @@ class EmitCImp final : public EmitCFunc {
             return VN_IS(nodep, CStmtUser) || VN_IS(nodep, CExprUser);
         });
     }
-    void openNextOutputFile(const std::string& fileName, bool userCpp) {
-        m_userCppFile = userCpp;
+    void openNextOutputFile(const std::string& fileName) {
         openNewOutputSourceFile(fileName, m_slow, false, "Design implementation internals");
         emitFileHeader();
     }
@@ -428,11 +427,10 @@ class EmitCImp final : public EmitCFunc {
             // Create ctor/dtor statements. If these need splitting, they will be emitted
             // during construction so do this before opening the output file.
             if (m_slow && !VN_IS(modp, Class)) createCtorDtorStmts(modp);
-            // Fast file holds `systemc_implementation, slow file `systemc_ctor/`systemc_dtor
-            const bool userCpp
-                = !m_slow
-                  || modp->hasAnyScSection({VSystemCSectionType::CTOR, VSystemCSectionType::DTOR});
-            openNextOutputFile(m_fileBaseName, userCpp);
+            // `systemc_implementation/`systemc_ctor/`systemc_dtor are emitted here
+            m_userCppFile = modp->hasAnyScSection(
+                {VSystemCSectionType::IMP, VSystemCSectionType::CTOR, VSystemCSectionType::DTOR});
+            openNextOutputFile(m_fileBaseName);
             doCommonImp(modp);
             closeOutputFile();
         }
@@ -442,7 +440,8 @@ class EmitCImp final : public EmitCFunc {
         if (funcps.empty()) return;
 
         // Open output file
-        openNextOutputFile(m_uniqueNames.get(m_fileBaseName), userCpp);
+        m_userCppFile = userCpp;
+        openNextOutputFile(m_uniqueNames.get(m_fileBaseName));
         // Emit all functions
         for (AstCFunc* const funcp : funcps) {
             VL_RESTORER(m_modp);
@@ -491,7 +490,7 @@ class EmitCImp final : public EmitCFunc {
             // Close old file
             closeOutputFile();
             // Open a new file
-            openNextOutputFile(m_uniqueNames.get(m_fileBaseName), m_userCppFile);
+            openNextOutputFile(m_uniqueNames.get(m_fileBaseName));
         }
 
         EmitCFunc::visit(nodep);
