@@ -35,7 +35,9 @@ VL_DEFINE_DEBUG_FUNCTIONS;
 class EmitCImp final : public EmitCFunc {
     // MEMBERS
     const bool m_slow;  // Creating __Slow file
-    const bool m_userCpp;  // Has user c++ that may reference any class
+    // Has `systemc_imp_header, which is in every file and may reference any class
+    const bool m_userImpHdr;
+    bool m_userCppFile = false;  // Current file has user C++ that may reference any class
     V3UniqueNames m_uniqueNames;  // Generates unique file names
     const std::string m_fileBaseName;  // Base name of the output files
     TextStmts m_ctorStmts;  // Statements constructing members in 'ctor'
@@ -44,16 +46,14 @@ class EmitCImp final : public EmitCFunc {
     std::string m_dtorSplitDecl;  // Declaration of sub-function 'dtor' was split into, if any
 
     // METHODS
-    static bool hasUserCpp(const AstNodeModule* const modp) {
-        return modp->hasAnyScSection({VSystemCSectionType::IMP, VSystemCSectionType::IMP_HDR,
-                                      VSystemCSectionType::CTOR, VSystemCSectionType::DTOR})
-               || modp->exists([](const AstNode* nodep) {
-                      if (const AstCStmtUser* const userStmtp = VN_CAST(nodep, CStmtUser))
-                          return userStmtp->fromDollarC();
-                      return VN_IS(nodep, CExprUser);
-                  });
+    static bool hasUserCpp(const AstCFunc* const funcp) {
+        // From $c, or from `systemc_ctor/`systemc_dtor of a class
+        return funcp->exists([](const AstNode* const nodep) {
+            return VN_IS(nodep, CStmtUser) || VN_IS(nodep, CExprUser);
+        });
     }
-    void openNextOutputFile(const std::string& fileName) {
+    void openNextOutputFile(const std::string& fileName, bool userCpp) {
+        m_userCppFile = userCpp;
         openNewOutputSourceFile(fileName, m_slow, false, "Design implementation internals");
         emitFileHeader();
     }
@@ -65,7 +65,7 @@ class EmitCImp final : public EmitCFunc {
             puts("#include \"" + EmitCUtil::prefixNameProtect(m_modp) + ".h\"\n");
         }
         emitModCUse(m_modp, VUseType::IMP_INCLUDE);
-        if (m_userCpp) {
+        if (m_userCppFile || m_userImpHdr) {
             for (const AstNode* nodep = v3Global.rootp()->modulesp(); nodep;
                  nodep = nodep->nextp()) {
                 if (nodep == m_modp) continue;
@@ -428,37 +428,21 @@ class EmitCImp final : public EmitCFunc {
             // Create ctor/dtor statements. If these need splitting, they will be emitted
             // during construction so do this before opening the output file.
             if (m_slow && !VN_IS(modp, Class)) createCtorDtorStmts(modp);
-            openNextOutputFile(m_fileBaseName);
+            // Fast file holds `systemc_implementation, slow file `systemc_ctor/`systemc_dtor
+            const bool userCpp
+                = !m_slow
+                  || modp->hasAnyScSection({VSystemCSectionType::CTOR, VSystemCSectionType::DTOR});
+            openNextOutputFile(m_fileBaseName, userCpp);
             doCommonImp(modp);
             closeOutputFile();
         }
     }
-    void emitCFuncImp(const AstNodeModule* modp) {
-        // Functions to be emitted here
-        std::vector<AstCFunc*> funcps;
-
-        const auto gather = [this, &funcps](const AstNodeModule* modp) {
-            for (AstNode* const nodep : modp->stmtspList()) {
-                AstCFunc* const funcp = VN_CAST(nodep, CFunc);
-                if (!funcp) continue;
-                // TRACE_* and DPI handled elsewhere
-                if (funcp->isTrace()) continue;
-                if (funcp->dpiImportPrototype()) continue;
-                if (funcp->dpiExportDispatcher()) continue;
-                if (funcp->slow() != m_slow) continue;
-                funcps.push_back(funcp);
-            }
-        };
-
-        gather(modp);
-        VL_RESTORER(m_classOrPackage);
-        if (VN_IS(modp, ClassPackage) || VN_IS(modp, Class)) m_classOrPackage = modp;
-
+    void emitCFuncFiles(const std::vector<AstCFunc*>& funcps, bool userCpp) {
         // Do not create empty files
         if (funcps.empty()) return;
 
         // Open output file
-        openNextOutputFile(m_uniqueNames.get(m_fileBaseName));
+        openNextOutputFile(m_uniqueNames.get(m_fileBaseName), userCpp);
         // Emit all functions
         for (AstCFunc* const funcp : funcps) {
             VL_RESTORER(m_modp);
@@ -467,6 +451,36 @@ class EmitCImp final : public EmitCFunc {
         }
         // Close output file
         closeOutputFile();
+    }
+    void emitCFuncImp(const AstNodeModule* modp) {
+        // Functions to be emitted here. User C++ may reference any class, so functions containing
+        // it go to separate files, keeping the includes of the other files minimal.
+        std::vector<AstCFunc*> funcps;
+        std::vector<AstCFunc*> userCppFuncps;
+
+        for (AstNode* const nodep : modp->stmtspList()) {
+            AstCFunc* const funcp = VN_CAST(nodep, CFunc);
+            if (!funcp) continue;
+            // TRACE_* and DPI handled elsewhere
+            if (funcp->isTrace()) continue;
+            if (funcp->dpiImportPrototype()) continue;
+            if (funcp->dpiExportDispatcher()) continue;
+            if (funcp->slow() != m_slow) continue;
+            (hasUserCpp(funcp) ? userCppFuncps : funcps).push_back(funcp);
+        }
+
+        VL_RESTORER(m_classOrPackage);
+        if (VN_IS(modp, ClassPackage) || VN_IS(modp, Class)) m_classOrPackage = modp;
+
+        if (v3Global.opt.outputSplit()) {
+            emitCFuncFiles(funcps, false);
+            emitCFuncFiles(userCppFuncps, true);
+        } else {
+            // Splitting disabled, so keep a single file
+            const bool userCpp = !userCppFuncps.empty();
+            funcps.insert(funcps.end(), userCppFuncps.begin(), userCppFuncps.end());
+            emitCFuncFiles(funcps, userCpp);
+        }
     }
 
     // VISITORS
@@ -477,7 +491,7 @@ class EmitCImp final : public EmitCFunc {
             // Close old file
             closeOutputFile();
             // Open a new file
-            openNextOutputFile(m_uniqueNames.get(m_fileBaseName));
+            openNextOutputFile(m_uniqueNames.get(m_fileBaseName), m_userCppFile);
         }
 
         EmitCFunc::visit(nodep);
@@ -485,7 +499,7 @@ class EmitCImp final : public EmitCFunc {
 
     explicit EmitCImp(const AstNodeModule* modp, bool slow)
         : m_slow{slow}
-        , m_userCpp{hasUserCpp(modp)}
+        , m_userImpHdr{modp->hasAnyScSection({VSystemCSectionType::IMP_HDR})}
         , m_fileBaseName{EmitCUtil::prefixNameProtect(modp)} {
         UINFO(5, "  Emitting implementation of " << EmitCUtil::prefixNameProtect(modp));
 
