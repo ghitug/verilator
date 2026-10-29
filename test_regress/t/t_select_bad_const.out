@@ -1,27 +1,31 @@
-%Warning-SELRANGE: t/t_select_bad_const.v:15:13: Selection index out of range: -1 outside 6:0
+%Warning-SELRANGE: t/t_select_bad_const.v:16:13: Selection index out of range: -1 outside 6:0
                                                : ... note: In instance 't'
-   15 |     l = arr1[-1];   
+   16 |     l = arr1[-1];   
       |             ^
                    ... For warning description see https://verilator.org/warn/SELRANGE?v=latest
                    ... Use "/* verilator lint_off SELRANGE */" and lint_on around source to disable this message.
-%Warning-SELRANGE: t/t_select_bad_const.v:16:13: Selection index out of range: -1 outside 6:0
+%Warning-SELRANGE: t/t_select_bad_const.v:17:13: Selection index out of range: -1 outside 6:0
                                                : ... note: In instance 't'
-   16 |     l = arr1[1 - 2];
+   17 |     l = arr1[1 - 2];
       |             ^
-%Warning-SELRANGE: t/t_select_bad_const.v:17:13: Selection index out of range: 9 outside 6:0
+%Warning-SELRANGE: t/t_select_bad_const.v:18:13: Selection index out of range: 9 outside 6:0
                                                : ... note: In instance 't'
-   17 |     l = arr1[P];
+   18 |     l = arr1[P];
       |             ^
-%Warning-SELRANGE: t/t_select_bad_const.v:18:13: Selection index out of range: -2 outside 9:5
+%Warning-SELRANGE: t/t_select_bad_const.v:19:13: Selection index out of range: -2 outside 9:5
                                                : ... note: In instance 't'
-   18 |     l = arr2[-2];
+   19 |     l = arr2[-2];
       |             ^
-%Warning-SELRANGE: t/t_select_bad_const.v:19:13: Selection index out of range: -3 outside 2:-2
+%Warning-SELRANGE: t/t_select_bad_const.v:20:13: Selection index out of range: -3 outside 2:-2
                                                : ... note: In instance 't'
-   19 |     l = arr3[-3];
+   20 |     l = arr3[-3];
       |             ^
-%Warning-SELRANGE: t/t_select_bad_const.v:20:13: Selection index out of range: 3 outside 2:-2
+%Warning-SELRANGE: t/t_select_bad_const.v:21:13: Selection index out of range: 3 outside 2:-2
                                                : ... note: In instance 't'
-   20 |     l = arr3[3];   
+   21 |     l = arr3[3];   
       |             ^
+%Warning-SELRANGE: t/t_select_bad_const.v:22:12: Selection index out of range: 9:9 outside 6:0
+                                               : ... note: In instance 't'
+   22 |     l = vec[P];
+      |            ^
 %Error: Exiting due to

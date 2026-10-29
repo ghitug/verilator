@@ -221,6 +221,9 @@ class WidthSelVisitor final : public VNVisitor {
         UINFO(6, "SELBIT " << nodep);
         UINFOTREE(9, nodep->backp(), "", "SELBT0");
         // lhsp/rhsp do not need to be constant
+        // Fold a constant index expression (e.g. '-1') so V3Width can check its bounds
+        V3Width::widthParamsEdit(nodep->bitp());  // constifyEdit doesn't ensure widths finished
+        V3Const::constifyEdit(nodep->bitp());  // May relink pointed to node, ok if not const
         AstNodeExpr* const fromp = nodep->fromp()->unlinkFrBack();
         AstNodeExpr* const rhsp = nodep->bitp()->unlinkFrBack();  // bit we're extracting
         UINFOTREE(9, nodep, "", "SELBT2");
@@ -230,10 +233,7 @@ class WidthSelVisitor final : public VNVisitor {
         UINFO(6, "  ddtypep " << ddtypep);
         if (const AstUnpackArrayDType* const adtypep = VN_CAST(ddtypep, UnpackArrayDType)) {
             // SELBIT(array, index) -> ARRAYSEL(array, index)
-            // Fold a constant index expression (e.g. '-1') so V3Width can check its bounds
-            // widthParamsEdit as constifyEdit doesn't ensure widths finished
-            AstNodeExpr* subp
-                = V3Const::constifyEdit(VN_AS(V3Width::widthParamsEdit(rhsp), NodeExpr));
+            AstNodeExpr* subp = rhsp;
             if (fromRange.lo() != 0 || fromRange.hi() < 0) {
                 subp = newSubNeg(subp, fromRange.lo());
             }

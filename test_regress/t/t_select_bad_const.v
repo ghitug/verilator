@@ -8,6 +8,7 @@ module t;
   logic arr1[7];
   logic arr2[5:9];
   logic arr3[-2:2];
+  logic [6:0] vec;
   localparam int P = 9;
 
   logic l;
@@ -18,5 +19,6 @@ module t;
     l = arr2[-2];
     l = arr3[-3];
     l = arr3[3];  // Above msb of an array with negative lsb
+    l = vec[P];
   end
 endmodule
