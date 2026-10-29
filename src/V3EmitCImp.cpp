@@ -48,7 +48,6 @@ class EmitCImp final : public EmitCFunc {
 
     // METHODS
     static bool hasUserCpp(const AstNodeModule* const modp, const AstCFunc* const funcp) {
-        // `systemc_ctor/`systemc_dtor of a class are inserted into its constructor/destructor
         if (funcp->isConstructor() && modp->hasAnyScSection({VSystemCSectionType::CTOR}))
             return true;
         if (funcp->isDestructor() && modp->hasAnyScSection({VSystemCSectionType::DTOR}))
@@ -434,7 +433,6 @@ class EmitCImp final : public EmitCFunc {
             // Create ctor/dtor statements. If these need splitting, they will be emitted
             // during construction so do this before opening the output file.
             if (m_slow && !VN_IS(modp, Class)) createCtorDtorStmts(modp);
-            // `systemc_implementation/`systemc_ctor/`systemc_dtor are emitted here
             VL_RESTORER(m_userCppFile);
             m_userCppFile = modp->hasAnyScSection(
                 {VSystemCSectionType::IMP, VSystemCSectionType::CTOR, VSystemCSectionType::DTOR});
@@ -486,10 +484,17 @@ class EmitCImp final : public EmitCFunc {
         VL_RESTORER(m_classOrPackage);
         if (VN_IS(modp, ClassPackage) || VN_IS(modp, Class)) m_classOrPackage = modp;
 
-        emitCFuncFiles(funcps, false);
-        // Functions that contain user c++ need to include every class; we create separate files,
-        // so that not every implementation file includes every class
-        emitCFuncFiles(userCppFuncps, true);
+        if (v3Global.opt.outputSplit()) {
+            emitCFuncFiles(funcps, false);
+            // Functions that contain user c++ need to include every class; we create separate
+            // files so that not every implementation file includes every class
+            emitCFuncFiles(userCppFuncps, true);
+        } else {
+            // Splitting disabled; emit only one file
+            funcps.insert(funcps.end(), userCppFuncps.begin(), userCppFuncps.end());
+            const bool userCpp = !userCppFuncps.empty();
+            emitCFuncFiles(funcps, userCpp);
+        }
     }
 
     // VISITORS
