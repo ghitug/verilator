@@ -301,6 +301,7 @@ class WidthVisitor final : public VNVisitor {
     const bool m_doGenerate;  // Do errors later inside generate statement
     bool m_streamConcat = false;  // True if visiting arguments of stream concatenation
     bool m_inParamOverride = false;  // True if visiting the value of a parameter override pin
+    bool m_underDeadBranch = false;  // Under if/?: branch its known constant condition never takes
     // Created dimension and enum tables, mapped to a reference reading the table (always cloned)
     std::map<std::pair<const AstNodeDType*, VAttrType>, AstVarRef*> m_tableMap;
     // Queues with given index type
@@ -641,10 +642,19 @@ class WidthVisitor final : public VNVisitor {
         if (m_vup->prelim()) {  // First stage evaluation
             // Just once, do the conditional, expect one bit out.
             iterateCheckBool(nodep, "Conditional Test", nodep->condp(), BOTH);
+            const VBoolOrUnknown condValue = knownCondValue(nodep->condp());
             // Determine sub expression widths only relying on what's in the subops
             //  CONTEXT_DET determined, but need data type for pattern assignments
-            userIterateAndNext(nodep->thenp(), WidthVP{m_vup->dtypeNullp(), PRELIM}.p());
-            userIterateAndNext(nodep->elsep(), WidthVP{m_vup->dtypeNullp(), PRELIM}.p());
+            {
+                VL_RESTORER(m_underDeadBranch);
+                m_underDeadBranch |= condValue == VBoolOrUnknown::BU_FALSE;
+                userIterateAndNext(nodep->thenp(), WidthVP{m_vup->dtypeNullp(), PRELIM}.p());
+            }
+            {
+                VL_RESTORER(m_underDeadBranch);
+                m_underDeadBranch |= condValue == VBoolOrUnknown::BU_TRUE;
+                userIterateAndNext(nodep->elsep(), WidthVP{m_vup->dtypeNullp(), PRELIM}.p());
+            }
             // Calculate width of this expression.
             // First call (prelim()) m_vup->width() is probably zero, so we'll return
             //  the size of this subexpression only.
@@ -1262,15 +1272,17 @@ class WidthVisitor final : public VNVisitor {
             if (nodep->fromp()->width() < width && !inParameterizedTemplate) {
                 // If it is not a lvalue, extend it
                 if (!isWriteSelect) {
-                    nodep->v3warn(SELRANGE, "Extracting " << width << " bits from only "
-                                                          << nodep->fromp()->width()
-                                                          << " bit number");
+                    if (!m_underDeadBranch) {
+                        nodep->v3warn(SELRANGE, "Extracting " << width << " bits from only "
+                                                              << nodep->fromp()->width()
+                                                              << " bit number");
+                    }
                     AstNodeDType* const subDTypep = nodep->findBitOrLogicDType(
                         width, width, nodep->fromp()->dtypep()->numeric(),
                         nodep->fromp()->dtypep()->isFourstate());
                     widthCheckSized(nodep, "errorless...", nodep->fromp(), subDTypep, EXTEND_EXP,
                                     false /*noerror*/);
-                } else {
+                } else if (!m_underDeadBranch) {
                     // Partial assignment
                     nodep->v3warn(SELRANGE, "Assigning " << width << " bits to only "
                                                          << nodep->fromp()->width()
@@ -1323,7 +1335,7 @@ class WidthVisitor final : public VNVisitor {
                 // actually generated.
                 if (m_doGenerate) {
                     UINFO(5, "Selection index out of range inside generate");
-                } else if (!inParameterizedTemplate) {
+                } else if (!inParameterizedTemplate && !m_underDeadBranch) {
                     if (nodep->declRange().ranged()) {
                         nodep->v3warn(SELRANGE, "Selection index out of range: "
                                                     << nodep->msbConst() << ":"
@@ -1436,7 +1448,8 @@ class WidthVisitor final : public VNVisitor {
                     && (VN_AS(nodep->bitp(), Const)->toSInt() > (frommsb - fromlsb)
                         || VN_AS(nodep->bitp(), Const)->toSInt() < 0)) {
                     // Suppress in dead/parameterized template modules
-                    if (!(m_modep && (m_modep->dead() || m_modep->parameterizedTemplate()))) {
+                    if (!(m_modep && (m_modep->dead() || m_modep->parameterizedTemplate()))
+                        && !m_underDeadBranch) {
                         nodep->v3warn(SELRANGE,
                                       "Selection index out of range: "
                                           << (VN_AS(nodep->bitp(), Const)->toSInt() + fromlsb)
@@ -6966,9 +6979,18 @@ class WidthVisitor final : public VNVisitor {
     void visit(AstNodeIf* nodep) override {
         assertAtStatement(nodep);
         // UINFOTREE(1, nodep, "", "IfPre");
-        userIterateAndNext(nodep->thensp(), nullptr);
-        userIterateAndNext(nodep->elsesp(), nullptr);
-        iterateCheckBool(nodep, "If", nodep->condp(), BOTH);  // it's like an if() condition.
+        iterateCheckBool(nodep, "If", nodep->condp(), BOTH);
+        const VBoolOrUnknown condValue = knownCondValue(nodep->condp());
+        {
+            VL_RESTORER(m_underDeadBranch);
+            m_underDeadBranch |= condValue == VBoolOrUnknown::BU_FALSE;
+            userIterateAndNext(nodep->thensp(), nullptr);
+        }
+        {
+            VL_RESTORER(m_underDeadBranch);
+            m_underDeadBranch |= condValue == VBoolOrUnknown::BU_TRUE;
+            userIterateAndNext(nodep->elsesp(), nullptr);
+        }
         // UINFOTREE(1, nodep, "", "IfOut");
     }
     void visit(AstExprStmt* nodep) override {
@@ -10017,6 +10039,18 @@ class WidthVisitor final : public VNVisitor {
         // IEEE 1800-2023 Table 11-1 logical operators, which take only integral or real operands
         return VN_IS(nodep, LogAnd) || VN_IS(nodep, LogEq) || VN_IS(nodep, LogIf)
                || VN_IS(nodep, LogNot) || VN_IS(nodep, LogOr);
+    }
+    // Value of a widthed condition if constant, e.g. 'g == 0' in an unrolled generate loop.
+    // Folds a clone, as the condition itself must stay intact, e.g. for coverage.
+    static VBoolOrUnknown knownCondValue(AstNodeExpr* condp) {
+        AstNode* const foldedp = V3Const::constifyEdit(condp->cloneTree(false));
+        const AstConst* const constp = VN_CAST(foldedp, Const);
+        const VBoolOrUnknown value = !constp               ? VBoolOrUnknown::BU_UNKNOWN
+                                     : constp->isZero()    ? VBoolOrUnknown::BU_FALSE
+                                     : constp->isNeqZero() ? VBoolOrUnknown::BU_TRUE
+                                                           : VBoolOrUnknown::BU_UNKNOWN;
+        VL_DO_DANGLING(foldedp->deleteTree(), foldedp);
+        return value;
     }
     void iterateCheckBool(AstNode* parentp, const char* side, AstNode* underp, Stage stage) {
         UASSERT_OBJ(stage == BOTH, parentp,
